@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+@theme {
+  --font-headline: "Space Grotesk", sans-serif;
+  --font-body: "Manrope", sans-serif;
+  --font-label: "Space Grotesk", sans-serif;
+
+  --color-background: #0c0e17;
+  --color-surface: #0c0e17;
+  --color-surface-container-low: #11131d;
+  --color-surface-container: #171924;
+  --color-surface-container-high: #1c1f2b;
+  --color-surface-container-highest: #222532;
+  --color-surface-bright: #282b3a;
+
+  --color-primary: #69daff;
+  --color-primary-container: #00cffc;
+  --color-on-primary: #004a5d;
+  --color-primary-dim: #00c0ea;
+
+  --color-secondary: #8197ff;
+  --color-secondary-container: #124af0;
+  --color-on-secondary: #001661;
+  --color-secondary-dim: #3e65ff;
+
+  --color-tertiary: #89a5ff;
+  --color-tertiary-container: #7696fd;
+  --color-on-tertiary: #00236d;
+
+  --color-error: #ff716c;
+  --color-error-dim: #d7383b;
+  --color-on-error: #490006;
+
+  --color-on-surface: #f0f0fd;
+  --color-on-surface-variant: #aaaab7;
+  --color-outline: #737580;
+  --color-outline-variant: #464752;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-on-surface font-body selection:bg-primary/30;
+  }
+
+  /* Hide number input spinners */
+  input::-webkit-outer-spin-button,
+  input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  input[type=number] {
+    -moz-appearance: textfield;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-surface-container-high/70 backdrop-blur-xl border border-white/5;
+  }
+  .next-gen-glow {
+    @apply shadow-[0_0_15px_rgba(105,218,255,0.15)];
+  }
+  .classic-glow {
+    @apply shadow-[0_0_15px_rgba(129,151,255,0.1)];
+  }
+  .hud-line {
+    background: linear-gradient(90deg, transparent, rgba(105, 218, 255, 0.3), transparent);
+    height: 1px;
+    width: 100%;
+  }
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Manrope:wght@300;400;500;600;700&display=swap');
+
