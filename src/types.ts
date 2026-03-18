@@ -10,6 +10,7 @@ export interface Station {
   user?: string;
   players?: number; // Added to track players for logging
   pendingRevenue?: number; // Added to store amount to collect
+  actualSecondsPlayed?: number; // Added to track actual time played
   rates: {
     single: { hourly: number; thirtyMin?: number; threeHour?: number; fiveHour?: number };
     duo: { hourly: number; thirtyMin?: number; threeHour?: number; fiveHour?: number };
@@ -22,11 +23,12 @@ export interface SessionLog {
   id: string;
   machineId: string;
   type: StationType;
-  status: 'completed' | 'in-progress';
+  status: 'completed' | 'in-progress' | 'terminated';
   players: number;
   duration: string;
   revenue: number;
   date: string; // ISO date string
+  terminationReason?: string;
 }
 
 export interface RevenueData {

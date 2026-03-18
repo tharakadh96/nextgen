@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Component } from 'react';
 import { 
   Terminal, 
   LayoutDashboard, 
@@ -24,7 +24,9 @@ import {
   Download,
   Lock,
   Unlock,
-  Save
+  Save,
+  Printer,
+  FileText
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -63,12 +65,12 @@ function secondsToTime(totalSeconds: number): string {
 
 // Mock Data
 const INITIAL_STATIONS: Station[] = [
-  { id: 'PS5-01', type: 'PS5', status: 'busy', remainingTime: '00:42:15', remainingSeconds: timeToSeconds('00:42:15'), totalSeconds: 3600, user: 'Alex_Vortex99', rates: { single: { hourly: 250, thirtyMin: 130, threeHour: 700, fiveHour: 1100 }, duo: { hourly: 300, thirtyMin: 160, threeHour: 850, fiveHour: 1350 }, trio: { hourly: 350, thirtyMin: 180, threeHour: 1000, fiveHour: 1600 }, squad: { hourly: 400, thirtyMin: 210, threeHour: 1150, fiveHour: 1850 } } },
+  { id: 'PS5-01', type: 'PS5', status: 'available', rates: { single: { hourly: 250, thirtyMin: 130, threeHour: 700, fiveHour: 1100 }, duo: { hourly: 300, thirtyMin: 160, threeHour: 850, fiveHour: 1350 }, trio: { hourly: 350, thirtyMin: 180, threeHour: 1000, fiveHour: 1600 }, squad: { hourly: 400, thirtyMin: 210, threeHour: 1150, fiveHour: 1850 } } },
   { id: 'PS5-02', type: 'PS5', status: 'available', rates: { single: { hourly: 250, thirtyMin: 130, threeHour: 700, fiveHour: 1100 }, duo: { hourly: 300, thirtyMin: 160, threeHour: 850, fiveHour: 1350 }, trio: { hourly: 350, thirtyMin: 180, threeHour: 1000, fiveHour: 1600 }, squad: { hourly: 400, thirtyMin: 210, threeHour: 1150, fiveHour: 1850 } } },
-  { id: 'PS5-03', type: 'PS5', status: 'busy', remainingTime: '00:08:42', remainingSeconds: timeToSeconds('00:08:42'), totalSeconds: 1800, user: 'Neo_Slayer', rates: { single: { hourly: 250, thirtyMin: 130, threeHour: 700, fiveHour: 1100 }, duo: { hourly: 300, thirtyMin: 160, threeHour: 850, fiveHour: 1350 }, trio: { hourly: 350, thirtyMin: 180, threeHour: 1000, fiveHour: 1600 }, squad: { hourly: 400, thirtyMin: 210, threeHour: 1150, fiveHour: 1850 } } },
+  { id: 'PS5-03', type: 'PS5', status: 'available', rates: { single: { hourly: 250, thirtyMin: 130, threeHour: 700, fiveHour: 1100 }, duo: { hourly: 300, thirtyMin: 160, threeHour: 850, fiveHour: 1350 }, trio: { hourly: 350, thirtyMin: 180, threeHour: 1000, fiveHour: 1600 }, squad: { hourly: 400, thirtyMin: 210, threeHour: 1150, fiveHour: 1850 } } },
   { id: 'PS5-04', type: 'PS5', status: 'available', rates: { single: { hourly: 250, thirtyMin: 130, threeHour: 700, fiveHour: 1100 }, duo: { hourly: 300, thirtyMin: 160, threeHour: 850, fiveHour: 1350 }, trio: { hourly: 350, thirtyMin: 180, threeHour: 1000, fiveHour: 1600 }, squad: { hourly: 400, thirtyMin: 210, threeHour: 1150, fiveHour: 1850 } } },
-  { id: 'PS4-01', type: 'PS4', status: 'busy', remainingTime: '01:15:00', remainingSeconds: timeToSeconds('01:15:00'), totalSeconds: 7200, user: 'Retro_Gamer85', rates: { single: { hourly: 150, thirtyMin: 80, threeHour: 400, fiveHour: 650 }, duo: { hourly: 200, thirtyMin: 110, threeHour: 550, fiveHour: 900 }, trio: { hourly: 250, thirtyMin: 130, threeHour: 700, fiveHour: 1150 }, squad: { hourly: 300, thirtyMin: 160, threeHour: 850, fiveHour: 1400 } } },
-  { id: 'PS4-02', type: 'PS4', status: 'busy', remainingTime: '00:15:30', remainingSeconds: timeToSeconds('00:15:30'), totalSeconds: 3600, user: 'Kazuma_Kiryu', rates: { single: { hourly: 150, thirtyMin: 80, threeHour: 400, fiveHour: 650 }, duo: { hourly: 200, thirtyMin: 110, threeHour: 550, fiveHour: 900 }, trio: { hourly: 250, thirtyMin: 130, threeHour: 700, fiveHour: 1150 }, squad: { hourly: 300, thirtyMin: 160, threeHour: 850, fiveHour: 1400 } } },
+  { id: 'PS4-01', type: 'PS4', status: 'available', rates: { single: { hourly: 150, thirtyMin: 80, threeHour: 400, fiveHour: 650 }, duo: { hourly: 200, thirtyMin: 110, threeHour: 550, fiveHour: 900 }, trio: { hourly: 250, thirtyMin: 130, threeHour: 700, fiveHour: 1150 }, squad: { hourly: 300, thirtyMin: 160, threeHour: 850, fiveHour: 1400 } } },
+  { id: 'PS4-02', type: 'PS4', status: 'available', rates: { single: { hourly: 150, thirtyMin: 80, threeHour: 400, fiveHour: 650 }, duo: { hourly: 200, thirtyMin: 110, threeHour: 550, fiveHour: 900 }, trio: { hourly: 250, thirtyMin: 130, threeHour: 700, fiveHour: 1150 }, squad: { hourly: 300, thirtyMin: 160, threeHour: 850, fiveHour: 1400 } } },
   { id: 'PS4-03', type: 'PS4', status: 'available', rates: { single: { hourly: 150, thirtyMin: 80, threeHour: 400, fiveHour: 650 }, duo: { hourly: 200, thirtyMin: 110, threeHour: 550, fiveHour: 900 }, trio: { hourly: 250, thirtyMin: 130, threeHour: 700, fiveHour: 1150 }, squad: { hourly: 300, thirtyMin: 160, threeHour: 850, fiveHour: 1400 } } },
   { id: 'PS4-04', type: 'PS4', status: 'available', rates: { single: { hourly: 150, thirtyMin: 80, threeHour: 400, fiveHour: 650 }, duo: { hourly: 200, thirtyMin: 110, threeHour: 550, fiveHour: 900 }, trio: { hourly: 250, thirtyMin: 130, threeHour: 700, fiveHour: 1150 }, squad: { hourly: 300, thirtyMin: 160, threeHour: 850, fiveHour: 1400 } } },
 ];
@@ -89,11 +91,8 @@ const REVENUE_HISTORY: RevenueData[] = [
 ];
 
 const RECENT_LOGS: SessionLog[] = [
-  { id: '1', machineId: 'STATION_01 (PS5)', type: 'PS5', status: 'completed', players: 2, duration: '02h 15m', revenue: 1250, date: '2026-03-18' },
-  { id: '2', machineId: 'STATION_02 (PS4)', type: 'PS4', status: 'completed', players: 1, duration: '00h 45m', revenue: 450, date: '2026-03-18' },
   { id: '3', machineId: 'STATION_03 (PS5)', type: 'PS5', status: 'completed', players: 4, duration: '03h 00m', revenue: 2800, date: '2026-03-17' },
   { id: '4', machineId: 'STATION_04 (PS4)', type: 'PS4', status: 'completed', players: 2, duration: '01h 30m', revenue: 900, date: '2026-03-17' },
-  { id: '5', machineId: 'STATION_05 (PS5)', type: 'PS5', status: 'completed', players: 2, duration: '01h 00m', revenue: 600, date: '2026-03-18' },
 ];
 
 export default function App() {
@@ -102,6 +101,8 @@ export default function App() {
   const [logs, setLogs] = useState<SessionLog[]>(RECENT_LOGS);
   const [filter, setFilter] = useState<'ALL' | 'PS5' | 'PS4'>('ALL');
   const [setupStation, setSetupStation] = useState<Station | null>(null);
+  const [terminateStation, setTerminateStation] = useState<Station | null>(null);
+  const [confirmSessionData, setConfirmSessionData] = useState<{ stationId: string, duration: number, players: number } | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [showPinModal, setShowPinModal] = useState(false);
   const [autoEndSessions, setAutoEndSessions] = useState(true);
@@ -164,11 +165,13 @@ export default function App() {
 
               const finalRevenue = Math.max(calculatedRevenue, minDurationPrice);
 
+              const actualSeconds = station.totalSeconds || 0;
               return {
                 ...station,
                 remainingSeconds: 0,
                 remainingTime: '00:00:00',
                 status: 'completed',
+                actualSecondsPlayed: actualSeconds,
                 pendingRevenue: finalRevenue
               };
             }
@@ -193,9 +196,9 @@ export default function App() {
   const handleCollectMoney = (station: Station) => {
     if (station.status !== 'completed') return;
 
-    const durationMinutes = Math.floor((station.totalSeconds || 0) / 60);
-    const hours = Math.floor(durationMinutes / 60);
-    const mins = durationMinutes % 60;
+    const durationSeconds = station.actualSecondsPlayed || 0;
+    const hours = Math.floor(durationSeconds / 3600);
+    const mins = Math.floor((durationSeconds % 3600) / 60);
     const durationStr = `${hours.toString().padStart(2, '0')}h ${mins.toString().padStart(2, '0')}m`;
 
     const newLog: SessionLog = {
@@ -220,11 +223,160 @@ export default function App() {
           user: undefined,
           players: undefined,
           pendingRevenue: undefined,
+          totalSeconds: undefined,
+          actualSecondsPlayed: undefined
+        };
+      }
+      return s;
+    }));
+  };
+
+  const handlePrintReceipt = (station: Station | SessionLog) => {
+    const isLog = 'machineId' in station;
+    const id = isLog ? (station as SessionLog).machineId : (station as Station).id;
+    const user = isLog ? 'Customer' : (station as Station).user || 'Customer';
+    const revenue = isLog ? (station as SessionLog).revenue : (station as Station).pendingRevenue || 0;
+    const duration = isLog ? (station as SessionLog).duration : (() => {
+      const s = station as Station;
+      const durationSeconds = s.actualSecondsPlayed || 0;
+      const hours = Math.floor(durationSeconds / 3600);
+      const mins = Math.floor((durationSeconds % 3600) / 60);
+      return `${hours.toString().padStart(2, '0')}h ${mins.toString().padStart(2, '0')}m`;
+    })();
+    const date = isLog ? (station as SessionLog).date : new Date().toLocaleDateString();
+    const type = isLog ? (station as SessionLog).type : (station as Station).type;
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Receipt - ${id}</title>
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=JetBrains+Mono&display=swap');
+            body { 
+              font-family: 'Inter', sans-serif; 
+              padding: 40px; 
+              color: #000;
+              max-width: 300px;
+              margin: 0 auto;
+            }
+            .header { text-align: center; border-bottom: 2px dashed #ccc; padding-bottom: 20px; margin-bottom: 20px; }
+            .header h1 { margin: 0; font-size: 24px; text-transform: uppercase; letter-spacing: 2px; }
+            .header p { margin: 5px 0 0; font-size: 12px; color: #666; }
+            .details { font-family: 'JetBrains Mono', monospace; font-size: 14px; line-height: 1.6; }
+            .row { display: flex; justify-content: space-between; margin-bottom: 8px; }
+            .total { border-top: 2px solid #000; margin-top: 20px; padding-top: 10px; font-weight: bold; font-size: 18px; }
+            .footer { text-align: center; margin-top: 40px; font-size: 10px; color: #888; border-top: 1px solid #eee; padding-top: 20px; }
+            @media print {
+              body { padding: 20px; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Nextgen Gaming</h1>
+            <p>Premium Gaming Experience</p>
+            <p>${date}</p>
+          </div>
+          <div class="details">
+            <div class="row"><span>Station:</span> <span>${id}</span></div>
+            <div class="row"><span>Platform:</span> <span>${type}</span></div>
+            <div class="row"><span>Customer:</span> <span>${user}</span></div>
+            <div class="row"><span>Duration:</span> <span>${duration}</span></div>
+            <div class="total row"><span>TOTAL:</span> <span>LKR ${revenue.toLocaleString()}</span></div>
+          </div>
+          <div class="footer">
+            <p>Thank you for playing!</p>
+            <p>Visit us again soon.</p>
+          </div>
+          <script>
+            window.onload = () => {
+              window.print();
+              setTimeout(() => window.close(), 500);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  const handleTerminateSession = (stationId: string, reason: string) => {
+    const station = stations.find(s => s.id === stationId);
+    if (!station) return;
+
+    // Calculate duration played so far
+    const durationSeconds = (station.totalSeconds || 0) - (station.remainingSeconds || 0);
+    const hours = Math.floor(durationSeconds / 3600);
+    const mins = Math.floor((durationSeconds % 3600) / 60);
+    const durationStr = `${hours.toString().padStart(2, '0')}h ${mins.toString().padStart(2, '0')}m`;
+
+    const newLog: SessionLog = {
+      id: Math.random().toString(36).substr(2, 9),
+      machineId: `${station.id} (${station.type})`,
+      type: station.type,
+      status: 'terminated',
+      players: station.players || 1,
+      duration: durationStr,
+      revenue: 0, // No revenue for terminated sessions
+      date: new Date().toISOString().split('T')[0],
+      terminationReason: reason
+    };
+
+    setLogs(prev => [newLog, ...prev]);
+    setStations(prev => prev.map(s => {
+      if (s.id === stationId) {
+        return {
+          ...s,
+          status: 'available',
+          remainingSeconds: undefined,
+          remainingTime: undefined,
+          user: undefined,
+          players: undefined,
+          pendingRevenue: undefined,
           totalSeconds: undefined
         };
       }
       return s;
     }));
+    setTerminateStation(null);
+  };
+
+  const handleClearLogs = () => {
+    // Removed as per user request
+  };
+
+  const handleExportCSV = () => {
+    const dailyLogs = logs.filter(l => l.date === selectedDate);
+    if (dailyLogs.length === 0) {
+      return;
+    }
+
+    const headers = ['Machine ID', 'Type', 'Status', 'Players', 'Duration', 'Revenue (LKR)', 'Date'];
+    const csvContent = [
+      headers.join(','),
+      ...dailyLogs.map(log => [
+        `"${log.machineId}"`,
+        `"${log.type}"`,
+        `"${log.status}"`,
+        log.players,
+        `"${log.duration}"`,
+        log.revenue,
+        `"${log.date}"`
+      ].join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `gaming-cafe-logs-${selectedDate}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const filteredStations = stations.filter(s => filter === 'ALL' || s.type === filter);
@@ -254,7 +406,7 @@ export default function App() {
       <header className="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-md border-b border-white/5 h-16 px-6 flex items-center justify-between shadow-[0_0_12px_rgba(105,218,255,0.1)]">
         <div className="flex items-center gap-3">
           <Terminal className="w-6 h-6 text-primary" />
-          <span className="text-xl font-black text-primary tracking-tighter font-headline uppercase">NextGen gaming cafe</span>
+          <span className="text-xl font-black text-primary tracking-tighter font-headline uppercase">Nextgen Gaming</span>
         </div>
         
         <div className="flex items-center gap-6">
@@ -382,10 +534,12 @@ export default function App() {
                       key={station.id} 
                       station={station} 
                       onStart={() => setSetupStation(station)}
+                      onTerminate={() => setTerminateStation(station)}
                       onEnd={() => {
                         setStations(prev => prev.map(s => {
                           if (s.id === station.id) {
-                            const durationMinutes = Math.floor(((s.totalSeconds || 0) - (s.remainingSeconds || 0)) / 60);
+                            const actualSeconds = (s.totalSeconds || 0) - (s.remainingSeconds || 0);
+                            const durationMinutes = Math.floor(actualSeconds / 60);
                             
                             let calculatedRevenue = 0;
                             const playerType = 
@@ -410,6 +564,7 @@ export default function App() {
                             return {
                               ...s,
                               status: 'completed',
+                              actualSecondsPlayed: actualSeconds,
                               pendingRevenue: finalRevenue,
                               remainingSeconds: 0,
                               remainingTime: '00:00:00'
@@ -419,6 +574,7 @@ export default function App() {
                         }));
                       }}
                       onCollect={() => handleCollectMoney(station)}
+                      onPrint={() => handlePrintReceipt(station)}
                     />
                   ))}
                 </div>
@@ -541,7 +697,10 @@ export default function App() {
                 <section className="lg:col-span-12 glass-card rounded-xl border border-white/5 overflow-hidden">
                   <div className="px-6 py-4 border-b border-white/5 flex justify-between items-center bg-surface-container-low/50">
                     <h2 className="font-headline font-bold text-sm tracking-[0.2em] text-on-surface uppercase">Daily Log: {selectedDate}</h2>
-                    <button className="text-[10px] font-headline font-bold text-primary hover:underline transition-all flex items-center gap-1 uppercase">
+                    <button 
+                      onClick={handleExportCSV}
+                      className="text-[10px] font-headline font-bold text-primary hover:underline transition-all flex items-center gap-1 uppercase"
+                    >
                       <Download className="w-3 h-3" />
                       EXPORT CSV
                     </button>
@@ -553,8 +712,9 @@ export default function App() {
                           <th className="px-6 py-4">Machine ID</th>
                           <th className="px-6 py-4">Status</th>
                           <th className="px-6 py-4 text-center">Players</th>
-                          <th className="px-6 py-4 text-center">Duration</th>
+                          <th className="px-6 py-4 text-center">Actual Play Time</th>
                           <th className="px-6 py-4 text-right">Revenue (LKR)</th>
+                          <th className="px-6 py-4 text-right">Action</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-white/5">
@@ -567,16 +727,34 @@ export default function App() {
                               </div>
                             </td>
                             <td className="px-6 py-5">
-                              <span className={cn(
-                                "text-[10px] font-headline px-2 py-0.5 rounded border uppercase font-bold",
-                                log.status === 'completed' ? "border-primary/30 text-primary" : "border-white/10 text-on-surface-variant"
-                              )}>
-                                {log.status}
-                              </span>
+                              <div className="flex flex-col gap-1">
+                                <span className={cn(
+                                  "text-[10px] font-headline px-2 py-0.5 rounded border uppercase font-bold w-fit",
+                                  log.status === 'completed' ? "border-primary/30 text-primary" : 
+                                  log.status === 'terminated' ? "border-error/30 text-error" :
+                                  "border-white/10 text-on-surface-variant"
+                                )}>
+                                  {log.status}
+                                </span>
+                                {log.terminationReason && (
+                                  <span className="text-[10px] text-on-surface-variant italic">
+                                    Reason: {log.terminationReason}
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="px-6 py-5 text-center font-label text-sm">{log.players}</td>
                             <td className="px-6 py-5 text-center font-label text-sm text-on-surface-variant">{log.duration}</td>
                             <td className="px-6 py-5 text-right font-headline font-bold text-primary">LKR {log.revenue.toLocaleString()}</td>
+                            <td className="px-6 py-5 text-right">
+                              <button 
+                                onClick={() => handlePrintReceipt(log)}
+                                className="p-2 hover:bg-white/10 rounded-lg transition-colors text-on-surface-variant hover:text-primary"
+                                title="Reprint Receipt"
+                              >
+                                <Printer className="w-4 h-4" />
+                              </button>
+                            </td>
                           </tr>
                         ))}
                         {logs.filter(l => l.date === selectedDate).length === 0 && (
@@ -932,9 +1110,29 @@ export default function App() {
             minPrice={minDurationPrice}
             onClose={() => setSetupStation(null)} 
             onStartTimer={(durationMinutes, players) => {
+              setConfirmSessionData({ stationId: setupStation.id, duration: durationMinutes, players });
+              setSetupStation(null);
+            }}
+          />
+        )}
+
+        {terminateStation && (
+          <TerminateSessionModal
+            stationId={terminateStation.id}
+            onClose={() => setTerminateStation(null)}
+            onConfirm={(reason) => handleTerminateSession(terminateStation.id, reason)}
+          />
+        )}
+
+        {confirmSessionData && (
+          <StartSessionConfirmationModal
+            stationId={confirmSessionData.stationId}
+            onClose={() => setConfirmSessionData(null)}
+            onConfirm={() => {
+              const { stationId, duration, players } = confirmSessionData;
               setStations(prev => prev.map(s => {
-                if (s.id === setupStation.id) {
-                  const seconds = durationMinutes * 60;
+                if (s.id === stationId) {
+                  const seconds = duration * 60;
                   return {
                     ...s,
                     status: 'busy',
@@ -947,7 +1145,7 @@ export default function App() {
                 }
                 return s;
               }));
-              setSetupStation(null);
+              setConfirmSessionData(null);
             }}
           />
         )}
@@ -1051,10 +1249,12 @@ interface StationCardProps {
   station: Station;
   onStart: () => void;
   onEnd: () => void;
+  onTerminate: () => void;
   onCollect: () => void;
+  onPrint: () => void;
 }
 
-const StationCard: React.FC<StationCardProps> = ({ station, onStart, onEnd, onCollect }) => {
+const StationCard: React.FC<StationCardProps> = ({ station, onStart, onEnd, onTerminate, onCollect, onPrint }) => {
   const isPS5 = station.type === 'PS5';
   const isBusy = station.status === 'busy';
   const isCompleted = station.status === 'completed';
@@ -1138,12 +1338,21 @@ const StationCard: React.FC<StationCardProps> = ({ station, onStart, onEnd, onCo
               <span className="text-[10px] text-on-surface-variant uppercase font-headline">User</span>
               <span className="text-sm font-bold text-on-surface">{station.user}</span>
             </div>
-            <button 
-              onClick={onCollect}
-              className="bg-primary hover:bg-primary/80 text-on-primary px-6 py-3 rounded-xl font-headline text-xs font-bold tracking-widest uppercase transition-all active:scale-95 shadow-[0_0_15px_rgba(105,218,255,0.4)]"
-            >
-              Collect Money
-            </button>
+            <div className="flex gap-2">
+              <button 
+                onClick={onPrint}
+                className="bg-surface-container-highest hover:bg-white/10 text-on-surface px-4 py-3 rounded-xl font-headline text-xs font-bold tracking-widest uppercase transition-all active:scale-95 border border-white/10 flex items-center gap-2"
+                title="Print Receipt"
+              >
+                <Printer className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={onCollect}
+                className="bg-primary hover:bg-primary/80 text-on-primary px-6 py-3 rounded-xl font-headline text-xs font-bold tracking-widest uppercase transition-all active:scale-95 shadow-[0_0_15px_rgba(105,218,255,0.4)]"
+              >
+                Collect Money
+              </button>
+            </div>
           </>
         ) : isBusy ? (
           <>
@@ -1151,12 +1360,20 @@ const StationCard: React.FC<StationCardProps> = ({ station, onStart, onEnd, onCo
               <span className="text-[10px] text-on-surface-variant uppercase font-headline">User</span>
               <span className="text-sm font-bold text-on-surface">{station.user}</span>
             </div>
-            <button 
-              onClick={onEnd}
-              className="bg-error/20 hover:bg-error/30 text-error px-6 py-3 rounded-xl font-headline text-xs font-bold tracking-widest uppercase transition-all active:scale-95"
-            >
-              End Session
-            </button>
+            <div className="flex gap-2">
+              <button 
+                onClick={onTerminate}
+                className="bg-error/10 hover:bg-error/20 text-error px-4 py-3 rounded-xl font-headline text-[10px] font-bold tracking-widest uppercase transition-all active:scale-95 border border-error/20"
+              >
+                Terminate
+              </button>
+              <button 
+                onClick={onEnd}
+                className="bg-error/20 hover:bg-error/30 text-error px-6 py-3 rounded-xl font-headline text-xs font-bold tracking-widest uppercase transition-all active:scale-95"
+              >
+                End Session
+              </button>
+            </div>
           </>
         ) : (
           <div className="w-full flex justify-end">
@@ -1191,6 +1408,146 @@ interface SessionSetupModalProps {
   minPrice: number;
   onClose: () => void;
   onStartTimer: (duration: number, players: number) => void;
+}
+
+function TerminateSessionModal({ stationId, onClose, onConfirm }: { stationId: string, onClose: () => void, onConfirm: (reason: string) => void }) {
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState(false);
+
+  const handleConfirm = () => {
+    if (reason.trim().length >= 3) {
+      onConfirm(reason);
+    } else {
+      setError(true);
+      setTimeout(() => setError(false), 1000);
+    }
+  };
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-background/90 backdrop-blur-md"
+    >
+      <motion.div 
+        initial={{ scale: 0.9, y: 20 }}
+        animate={{ scale: 1, y: 0 }}
+        exit={{ scale: 0.9, y: 20 }}
+        className="w-full max-w-md bg-surface-container-low rounded-xl shadow-2xl border border-white/10 p-8 text-center"
+      >
+        <div className="w-16 h-16 bg-error/20 rounded-full flex items-center justify-center mx-auto mb-6">
+          <X className="w-8 h-8 text-error" />
+        </div>
+        
+        <h2 className="font-headline text-2xl font-bold text-on-surface uppercase mb-2">Terminate Session</h2>
+        <p className="text-on-surface-variant text-sm mb-8">
+          Are you sure you want to terminate the session for <span className="text-on-surface font-bold">{stationId}</span>? No revenue will be added.
+        </p>
+
+        <div className="space-y-6">
+          <div className="text-left">
+            <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2 block">Reason for Termination</label>
+            <textarea 
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              autoFocus
+              className={cn(
+                "w-full bg-surface-container-high border-2 rounded-xl py-4 px-6 font-headline text-lg focus:outline-none transition-all min-h-[100px] resize-none",
+                error ? "border-error animate-shake" : "border-white/5 focus:border-primary"
+              )}
+              placeholder="Enter reason (e.g. Power failure, System crash...)"
+            />
+            {error && <p className="text-error text-[10px] font-bold mt-1 uppercase">Please provide a valid reason (min 3 chars)</p>}
+          </div>
+
+          <div className="flex gap-4">
+            <button 
+              onClick={onClose}
+              className="flex-1 py-4 px-6 rounded-xl bg-surface-container-highest font-headline font-bold text-on-surface hover:bg-surface-bright transition-all uppercase"
+            >
+              CANCEL
+            </button>
+            <button 
+              onClick={handleConfirm}
+              className="flex-[2] py-4 px-6 rounded-xl bg-error text-on-primary font-headline font-bold shadow-[0_0_20px_rgba(255,82,82,0.3)] hover:shadow-[0_0_30px_rgba(255,82,82,0.5)] transition-all active:scale-95 uppercase"
+            >
+              TERMINATE
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function StartSessionConfirmationModal({ stationId, onClose, onConfirm }: { stationId: string, onClose: () => void, onConfirm: () => void }) {
+  const [passcode, setPasscode] = useState("");
+  const [error, setError] = useState(false);
+
+  const handleConfirm = () => {
+    if (passcode.toLowerCase() === "yes") {
+      onConfirm();
+    } else {
+      setError(true);
+      setTimeout(() => setError(false), 1000);
+    }
+  };
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-background/90 backdrop-blur-md"
+    >
+      <motion.div 
+        initial={{ scale: 0.9, y: 20 }}
+        animate={{ scale: 1, y: 0 }}
+        exit={{ scale: 0.9, y: 20 }}
+        className="w-full max-w-md bg-surface-container-low rounded-xl shadow-2xl border border-white/10 p-8 text-center"
+      >
+        <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center mx-auto mb-6">
+          <Lock className="w-8 h-8 text-primary" />
+        </div>
+        
+        <h2 className="font-headline text-2xl font-bold text-on-surface uppercase mb-2">Confirm Session</h2>
+        <p className="text-on-surface-variant text-sm mb-8">
+          Type <span className="text-primary font-bold">"yes"</span> to authorize session start for <span className="text-on-surface font-bold">{stationId}</span>
+        </p>
+
+        <div className="space-y-6">
+          <input 
+            type="text"
+            value={passcode}
+            onChange={(e) => setPasscode(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleConfirm()}
+            autoFocus
+            className={cn(
+              "w-full bg-surface-container-high border-2 rounded-xl py-4 px-6 text-center font-headline text-2xl font-bold tracking-widest focus:outline-none transition-all uppercase",
+              error ? "border-error animate-shake" : "border-white/5 focus:border-primary"
+            )}
+            placeholder="TYPE YES"
+          />
+
+          <div className="flex gap-4">
+            <button 
+              onClick={onClose}
+              className="flex-1 py-4 px-6 rounded-xl bg-surface-container-highest font-headline font-bold text-on-surface hover:bg-surface-bright transition-all uppercase"
+            >
+              CANCEL
+            </button>
+            <button 
+              onClick={handleConfirm}
+              className="flex-[2] py-4 px-6 rounded-xl bg-primary text-on-primary font-headline font-bold shadow-[0_0_20px_rgba(105,218,255,0.3)] hover:shadow-[0_0_30px_rgba(105,218,255,0.5)] transition-all active:scale-95 uppercase"
+            >
+              AUTHORIZE
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
 }
 
 function SessionSetupModal({ station, minPrice, onClose, onStartTimer }: SessionSetupModalProps) {
