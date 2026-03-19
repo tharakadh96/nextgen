@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, Component } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Terminal, 
   LayoutDashboard, 
@@ -41,7 +41,22 @@ import {
 } from 'recharts';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { Station, StationType, SessionLog, RevenueData } from './types';
+import { Station, SessionLog, RevenueData } from './types';
+import {
+  fetchStations,
+  fetchPricing,
+  fetchSettings,
+  fetchLogs,
+  fetchDailyReport,
+  startSession,
+  endSession,
+  terminateSession,
+  collectSession,
+  savePricing,
+  saveSettings,
+  verifyAdminPin,
+  PlatformRates,
+} from './api';
 
 // Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -63,172 +78,221 @@ function secondsToTime(totalSeconds: number): string {
   return [h, m, s].map(v => v.toString().padStart(2, '0')).join(':');
 }
 
-// Mock Data
-const INITIAL_STATIONS: Station[] = [
-  { id: 'PS5-01', type: 'PS5', status: 'available', rates: { single: { hourly: 250, thirtyMin: 130, threeHour: 700, fiveHour: 1100 }, duo: { hourly: 300, thirtyMin: 160, threeHour: 850, fiveHour: 1350 }, trio: { hourly: 350, thirtyMin: 180, threeHour: 1000, fiveHour: 1600 }, squad: { hourly: 400, thirtyMin: 210, threeHour: 1150, fiveHour: 1850 } } },
-  { id: 'PS5-02', type: 'PS5', status: 'available', rates: { single: { hourly: 250, thirtyMin: 130, threeHour: 700, fiveHour: 1100 }, duo: { hourly: 300, thirtyMin: 160, threeHour: 850, fiveHour: 1350 }, trio: { hourly: 350, thirtyMin: 180, threeHour: 1000, fiveHour: 1600 }, squad: { hourly: 400, thirtyMin: 210, threeHour: 1150, fiveHour: 1850 } } },
-  { id: 'PS5-03', type: 'PS5', status: 'available', rates: { single: { hourly: 250, thirtyMin: 130, threeHour: 700, fiveHour: 1100 }, duo: { hourly: 300, thirtyMin: 160, threeHour: 850, fiveHour: 1350 }, trio: { hourly: 350, thirtyMin: 180, threeHour: 1000, fiveHour: 1600 }, squad: { hourly: 400, thirtyMin: 210, threeHour: 1150, fiveHour: 1850 } } },
-  { id: 'PS5-04', type: 'PS5', status: 'available', rates: { single: { hourly: 250, thirtyMin: 130, threeHour: 700, fiveHour: 1100 }, duo: { hourly: 300, thirtyMin: 160, threeHour: 850, fiveHour: 1350 }, trio: { hourly: 350, thirtyMin: 180, threeHour: 1000, fiveHour: 1600 }, squad: { hourly: 400, thirtyMin: 210, threeHour: 1150, fiveHour: 1850 } } },
-  { id: 'PS4-01', type: 'PS4', status: 'available', rates: { single: { hourly: 150, thirtyMin: 80, threeHour: 400, fiveHour: 650 }, duo: { hourly: 200, thirtyMin: 110, threeHour: 550, fiveHour: 900 }, trio: { hourly: 250, thirtyMin: 130, threeHour: 700, fiveHour: 1150 }, squad: { hourly: 300, thirtyMin: 160, threeHour: 850, fiveHour: 1400 } } },
-  { id: 'PS4-02', type: 'PS4', status: 'available', rates: { single: { hourly: 150, thirtyMin: 80, threeHour: 400, fiveHour: 650 }, duo: { hourly: 200, thirtyMin: 110, threeHour: 550, fiveHour: 900 }, trio: { hourly: 250, thirtyMin: 130, threeHour: 700, fiveHour: 1150 }, squad: { hourly: 300, thirtyMin: 160, threeHour: 850, fiveHour: 1400 } } },
-  { id: 'PS4-03', type: 'PS4', status: 'available', rates: { single: { hourly: 150, thirtyMin: 80, threeHour: 400, fiveHour: 650 }, duo: { hourly: 200, thirtyMin: 110, threeHour: 550, fiveHour: 900 }, trio: { hourly: 250, thirtyMin: 130, threeHour: 700, fiveHour: 1150 }, squad: { hourly: 300, thirtyMin: 160, threeHour: 850, fiveHour: 1400 } } },
-  { id: 'PS4-04', type: 'PS4', status: 'available', rates: { single: { hourly: 150, thirtyMin: 80, threeHour: 400, fiveHour: 650 }, duo: { hourly: 200, thirtyMin: 110, threeHour: 550, fiveHour: 900 }, trio: { hourly: 250, thirtyMin: 130, threeHour: 700, fiveHour: 1150 }, squad: { hourly: 300, thirtyMin: 160, threeHour: 850, fiveHour: 1400 } } },
-];
-
-const REVENUE_HISTORY: RevenueData[] = [
-  { time: '08:00', value: 1200 },
-  { time: '10:00', value: 1800 },
-  { time: '12:00', value: 2600 },
-  { time: '14:00', value: 3400 },
-  { time: '16:00', value: 3000 },
-  { time: '18:00', value: 2400 },
-  { time: '20:00', value: 1600 },
-  { time: '22:00', value: 2200 },
-  { time: '00:00', value: 3800 },
-  { time: '02:00', value: 2800 },
-  { time: '04:00', value: 2000 },
-  { time: '06:00', value: 1400 },
-];
-
-const RECENT_LOGS: SessionLog[] = [
-  { id: '3', machineId: 'STATION_03 (PS5)', type: 'PS5', status: 'completed', players: 4, duration: '03h 00m', revenue: 2800, date: '2026-03-17' },
-  { id: '4', machineId: 'STATION_04 (PS4)', type: 'PS4', status: 'completed', players: 2, duration: '01h 30m', revenue: 900, date: '2026-03-17' },
-];
+// Session storage key for persisting the admin JWT across page reloads
+const ADMIN_TOKEN_KEY = 'nextgen_admin_token';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'reports' | 'settings'>('dashboard');
-  const [stations, setStations] = useState<Station[]>(INITIAL_STATIONS);
-  const [logs, setLogs] = useState<SessionLog[]>(RECENT_LOGS);
+  const [stations, setStations] = useState<Station[]>([]);
+  const [logs, setLogs] = useState<SessionLog[]>([]);
   const [filter, setFilter] = useState<'ALL' | 'PS5' | 'PS4'>('ALL');
   const [setupStation, setSetupStation] = useState<Station | null>(null);
   const [terminateStation, setTerminateStation] = useState<Station | null>(null);
-  const [confirmSessionData, setConfirmSessionData] = useState<{ stationId: string, duration: number, players: number } | null>(null);
+  const [confirmSessionData, setConfirmSessionData] = useState<{ stationId: string, players: number, startTime: string, endTime: string } | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [showPinModal, setShowPinModal] = useState(false);
   const [autoEndSessions, setAutoEndSessions] = useState(true);
-  
+  const [isLoading, setIsLoading] = useState(true);
+  const [revenueHistory, setRevenueHistory] = useState<RevenueData[]>([]);
+
   // Admin & Pricing State
   const [isAdmin, setIsAdmin] = useState(false);
-  const [ps5Rates, setPs5Rates] = useState({
-    single: { hourly: 250, thirtyMin: 130, threeHour: 700, fiveHour: 1100 },
-    duo: { hourly: 300, thirtyMin: 160, threeHour: 850, fiveHour: 1350 },
-    trio: { hourly: 350, thirtyMin: 180, threeHour: 1000, fiveHour: 1600 },
-    squad: { hourly: 400, thirtyMin: 210, threeHour: 1150, fiveHour: 1850 }
-  });
-  const [ps4Rates, setPs4Rates] = useState({
-    single: { hourly: 150, thirtyMin: 80, threeHour: 400, fiveHour: 650 },
-    duo: { hourly: 200, thirtyMin: 110, threeHour: 550, fiveHour: 900 },
-    trio: { hourly: 250, thirtyMin: 130, threeHour: 700, fiveHour: 1150 },
-    squad: { hourly: 300, thirtyMin: 160, threeHour: 850, fiveHour: 1400 }
-  });
-  const [minDurationPrice, setMinDurationPrice] = useState(50);
+  const [adminToken, setAdminToken] = useState<string | null>(
+    () => sessionStorage.getItem(ADMIN_TOKEN_KEY)
+  );
+  const [ps5Rates, setPs5Rates] = useState<PlatformRates | null>(null);
+  const [ps4Rates, setPs4Rates] = useState<PlatformRates | null>(null);
+  const [minDurationPrice, setMinDurationPrice] = useState(30);
 
-  // Sync rates to stations when they change
-  const handleSaveRates = () => {
-    setStations(prev => prev.map(s => ({
-      ...s,
-      rates: s.type === 'PS5' ? ps5Rates : ps4Rates
-    })));
-    alert('Pricing configuration saved successfully!');
+  // Restore admin session from sessionStorage on mount
+  useEffect(() => {
+    const stored = sessionStorage.getItem(ADMIN_TOKEN_KEY);
+    if (stored) {
+      setAdminToken(stored);
+      setIsAdmin(true);
+    }
+  }, []);
+
+  // Initial data load on mount
+  useEffect(() => {
+    let cancelled = false;
+    const today = new Date().toISOString().split('T')[0];
+
+    async function loadInitialData() {
+      try {
+        const [stationsData, pricingData, settingsData, reportData] = await Promise.all([
+          fetchStations(),
+          fetchPricing(),
+          fetchSettings(),
+          fetchDailyReport(today),
+        ]);
+        if (cancelled) return;
+        setStations(stationsData);
+        setPs5Rates(pricingData.ps5Rates);
+        setPs4Rates(pricingData.ps4Rates);
+        setMinDurationPrice(pricingData.minDurationPrice);
+        setAutoEndSessions(settingsData.auto_end_sessions);
+        setRevenueHistory(reportData.hourlyBreakdown);
+      } catch (err) {
+        console.error('Failed to load initial data:', err);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+
+    loadInitialData();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Reload logs whenever the selected date changes
+  useEffect(() => {
+    let cancelled = false;
+    fetchLogs(selectedDate)
+      .then((data) => { if (!cancelled) setLogs(data); })
+      .catch((err) => console.error('Failed to load logs:', err));
+    return () => { cancelled = true; };
+  }, [selectedDate]);
+
+  // Reload revenue chart whenever the selected date changes
+  useEffect(() => {
+    let cancelled = false;
+    fetchDailyReport(selectedDate)
+      .then((data) => { if (!cancelled) setRevenueHistory(data.hourlyBreakdown); })
+      .catch((err) => console.error('Failed to load daily report:', err));
+    return () => { cancelled = true; };
+  }, [selectedDate]);
+
+  // Persist/clear adminToken in sessionStorage whenever it changes
+  useEffect(() => {
+    if (adminToken) {
+      sessionStorage.setItem(ADMIN_TOKEN_KEY, adminToken);
+    } else {
+      sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+    }
+  }, [adminToken]);
+
+  const handleSaveRates = async () => {
+    if (!adminToken || !ps5Rates || !ps4Rates) return;
+    try {
+      await savePricing(adminToken, ps5Rates, ps4Rates, minDurationPrice);
+      // Refresh stations so the UI picks up rate changes immediately
+      const updated = await fetchStations();
+      setStations(updated);
+      alert('Pricing configuration saved successfully!');
+    } catch (err) {
+      console.error('Failed to save pricing:', err);
+      alert('Failed to save pricing. Please try again.');
+    }
   };
 
-  // Timer Effect
+  // Track which station IDs are currently in-flight for auto-end to prevent duplicate API calls
+  const autoEndingRef = useRef<Set<string>>(new Set());
+
+  // Timer Effect — ticks every second, calls the server when a session hits zero
   useEffect(() => {
     const interval = setInterval(() => {
-      setStations(prevStations => 
-        prevStations.map(station => {
-          if (station.status === 'busy' && station.remainingSeconds !== undefined) {
-            const nextSeconds = station.remainingSeconds - 1;
-            
-            // Handle Auto-End (if time is up or just hit zero)
-            if (nextSeconds <= 0 && autoEndSessions) {
-              const durationMinutes = Math.floor((station.totalSeconds || 0) / 60);
-              
-              let calculatedRevenue = 0;
-              const playerType = 
-                station.players === 4 ? 'squad' : 
-                station.players === 3 ? 'trio' : 
-                station.players === 2 ? 'duo' : 
-                'single';
-              
-              const rates = station.rates[playerType];
-              
-              if (durationMinutes <= 30 && rates.thirtyMin) {
-                calculatedRevenue = rates.thirtyMin;
-              } else if (durationMinutes === 180 && rates.threeHour) {
-                calculatedRevenue = rates.threeHour;
-              } else if (durationMinutes === 300 && rates.fiveHour) {
-                calculatedRevenue = rates.fiveHour;
-              } else {
-                calculatedRevenue = rates.hourly * (durationMinutes / 60);
-              }
+      setStations(prevStations => {
+        const toAutoEnd: Station[] = [];
 
-              const finalRevenue = Math.max(calculatedRevenue, minDurationPrice);
+        const next = prevStations.map(station => {
+          if (station.status !== 'busy' || station.remainingSeconds === undefined) {
+            return station;
+          }
 
-              const actualSeconds = station.totalSeconds || 0;
-              return {
-                ...station,
-                remainingSeconds: 0,
-                remainingTime: '00:00:00',
-                status: 'completed',
-                actualSecondsPlayed: actualSeconds,
-                pendingRevenue: finalRevenue
-              };
+          const nextSeconds = station.remainingSeconds - 1;
+
+          if (nextSeconds <= 0 && autoEndSessions) {
+            // Guard: only fire the API call once per station expiry
+            if (!autoEndingRef.current.has(station.id)) {
+              autoEndingRef.current.add(station.id);
+              toAutoEnd.push(station);
             }
 
-            // If not auto-ending, just keep counting down (even into negatives)
+            // Optimistic update: move to completed so UI responds immediately
             return {
               ...station,
-              remainingSeconds: nextSeconds,
-              remainingTime: nextSeconds < 0 
-                ? `-${secondsToTime(Math.abs(nextSeconds))}` 
-                : secondsToTime(nextSeconds)
+              remainingSeconds: 0,
+              remainingTime: '00:00:00',
+              status: 'completed' as const,
             };
           }
-          return station;
-        })
-      );
+
+          // Countdown — allow negative drift when autoEnd is off
+          return {
+            ...station,
+            remainingSeconds: nextSeconds,
+            remainingTime: nextSeconds < 0
+              ? `-${secondsToTime(Math.abs(nextSeconds))}`
+              : secondsToTime(nextSeconds),
+          };
+        });
+
+        // Fire API calls outside the render cycle
+        if (toAutoEnd.length > 0) {
+          for (const station of toAutoEnd) {
+            endSession(station.id)
+              .then((result) => {
+                // Patch the station with server-authoritative revenue and duration
+                setStations(prev => prev.map(s => {
+                  if (s.id !== station.id) return s;
+                  return {
+                    ...s,
+                    status: 'completed' as const,
+                    pendingRevenue: result.pendingRevenue,
+                    actualSecondsPlayed: result.actualSecondsPlayed,
+                    remainingSeconds: 0,
+                    remainingTime: '00:00:00',
+                  };
+                }));
+                // Full refresh to stay in sync with any server-side state
+                fetchStations()
+                  .then(setStations)
+                  .catch(err => console.error('Failed to refresh stations after auto-end:', err));
+              })
+              .catch(err => {
+                console.error(`Auto-end failed for ${station.id}:`, err);
+                // Remove the guard so the timer can retry on the next tick
+                autoEndingRef.current.delete(station.id);
+              });
+          }
+        }
+
+        return next;
+      });
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [minDurationPrice, autoEndSessions]);
+  }, [autoEndSessions]);
 
-  const handleCollectMoney = (station: Station) => {
+  const handleCollectMoney = async (station: Station) => {
     if (station.status !== 'completed') return;
 
-    const durationSeconds = station.actualSecondsPlayed || 0;
-    const hours = Math.floor(durationSeconds / 3600);
-    const mins = Math.floor((durationSeconds % 3600) / 60);
-    const durationStr = `${hours.toString().padStart(2, '0')}h ${mins.toString().padStart(2, '0')}m`;
+    try {
+      const result = await collectSession(station.id);
 
-    const newLog: SessionLog = {
-      id: Math.random().toString(36).substr(2, 9),
-      machineId: `${station.id} (${station.type})`,
-      type: station.type,
-      status: 'completed',
-      players: station.players || 1,
-      duration: durationStr,
-      revenue: station.pendingRevenue || 0,
-      date: new Date().toISOString().split('T')[0]
-    };
+      // Build a log entry from the server response and prepend it to today's view
+      const newLog: SessionLog = {
+        id: result.sessionId,
+        machineId: result.machineId,
+        type: result.type,
+        status: 'completed',
+        players: result.players,
+        duration: result.duration,
+        revenue: result.revenue,
+        date: result.date,
+      };
+      setLogs(prev => [newLog, ...prev]);
 
-    setLogs(prev => [newLog, ...prev]);
-    setStations(prev => prev.map(s => {
-      if (s.id === station.id) {
-        return {
-          ...s,
-          status: 'available',
-          remainingSeconds: undefined,
-          remainingTime: undefined,
-          user: undefined,
-          players: undefined,
-          pendingRevenue: undefined,
-          totalSeconds: undefined,
-          actualSecondsPlayed: undefined
-        };
-      }
-      return s;
-    }));
+      // Refresh stations so the collected station shows as available
+      const updated = await fetchStations();
+      setStations(updated);
+
+      // Clear the auto-end guard for this station so it can be reused
+      autoEndingRef.current.delete(station.id);
+    } catch (err) {
+      console.error('Failed to collect money:', err);
+      alert('Failed to collect payment. Please try again.');
+    }
   };
 
   const handlePrintReceipt = (station: Station | SessionLog) => {
@@ -303,44 +367,22 @@ export default function App() {
     printWindow.document.close();
   };
 
-  const handleTerminateSession = (stationId: string, reason: string) => {
-    const station = stations.find(s => s.id === stationId);
-    if (!station) return;
-
-    // Calculate duration played so far
-    const durationSeconds = (station.totalSeconds || 0) - (station.remainingSeconds || 0);
-    const hours = Math.floor(durationSeconds / 3600);
-    const mins = Math.floor((durationSeconds % 3600) / 60);
-    const durationStr = `${hours.toString().padStart(2, '0')}h ${mins.toString().padStart(2, '0')}m`;
-
-    const newLog: SessionLog = {
-      id: Math.random().toString(36).substr(2, 9),
-      machineId: `${station.id} (${station.type})`,
-      type: station.type,
-      status: 'terminated',
-      players: station.players || 1,
-      duration: durationStr,
-      revenue: 0, // No revenue for terminated sessions
-      date: new Date().toISOString().split('T')[0],
-      terminationReason: reason
-    };
-
-    setLogs(prev => [newLog, ...prev]);
-    setStations(prev => prev.map(s => {
-      if (s.id === stationId) {
-        return {
-          ...s,
-          status: 'available',
-          remainingSeconds: undefined,
-          remainingTime: undefined,
-          user: undefined,
-          players: undefined,
-          pendingRevenue: undefined,
-          totalSeconds: undefined
-        };
-      }
-      return s;
-    }));
+  const handleTerminateSession = async (stationId: string, reason: string) => {
+    try {
+      await terminateSession(stationId, reason);
+      // Refresh both stations and logs so the terminated session appears correctly
+      const [updatedStations, updatedLogs] = await Promise.all([
+        fetchStations(),
+        fetchLogs(selectedDate),
+      ]);
+      setStations(updatedStations);
+      setLogs(updatedLogs);
+      // Clear any auto-end guard for this station
+      autoEndingRef.current.delete(stationId);
+    } catch (err) {
+      console.error('Failed to terminate session:', err);
+      alert('Failed to terminate session. Please try again.');
+    }
     setTerminateStation(null);
   };
 
@@ -454,7 +496,21 @@ export default function App() {
       {/* Main Content */}
       <main className="pt-24 pb-32 px-4 md:px-8 max-w-7xl mx-auto">
         <AnimatePresence mode="wait">
-          {activeTab === 'dashboard' && (
+          {isLoading && (
+            <motion.div
+              key="loading"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex items-center justify-center h-64"
+            >
+              <div className="flex flex-col items-center gap-4 text-on-surface-variant">
+                <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                <span className="font-headline text-xs tracking-widest uppercase">Loading station data...</span>
+              </div>
+            </motion.div>
+          )}
+          {!isLoading && activeTab === 'dashboard' && (
             <motion.div 
               key="dashboard"
               initial={{ opacity: 0, y: 20 }}
@@ -535,43 +591,28 @@ export default function App() {
                       station={station} 
                       onStart={() => setSetupStation(station)}
                       onTerminate={() => setTerminateStation(station)}
-                      onEnd={() => {
-                        setStations(prev => prev.map(s => {
-                          if (s.id === station.id) {
-                            const actualSeconds = (s.totalSeconds || 0) - (s.remainingSeconds || 0);
-                            const durationMinutes = Math.floor(actualSeconds / 60);
-                            
-                            let calculatedRevenue = 0;
-                            const playerType = 
-                              s.players === 4 ? 'squad' : 
-                              s.players === 3 ? 'trio' : 
-                              s.players === 2 ? 'duo' : 
-                              'single';
-                            const rates = s.rates[playerType];
-                            
-                            if (durationMinutes <= 30 && rates.thirtyMin) {
-                              calculatedRevenue = rates.thirtyMin;
-                            } else if (durationMinutes === 180 && rates.threeHour) {
-                              calculatedRevenue = rates.threeHour;
-                            } else if (durationMinutes === 300 && rates.fiveHour) {
-                              calculatedRevenue = rates.fiveHour;
-                            } else {
-                              calculatedRevenue = rates.hourly * (durationMinutes / 60);
-                            }
-
-                            const finalRevenue = Math.max(calculatedRevenue, minDurationPrice);
-
+                      onEnd={async () => {
+                        try {
+                          const result = await endSession(station.id);
+                          // Optimistic update with server-authoritative values
+                          setStations(prev => prev.map(s => {
+                            if (s.id !== station.id) return s;
                             return {
                               ...s,
-                              status: 'completed',
-                              actualSecondsPlayed: actualSeconds,
-                              pendingRevenue: finalRevenue,
+                              status: 'completed' as const,
+                              pendingRevenue: result.pendingRevenue,
+                              actualSecondsPlayed: result.actualSecondsPlayed,
                               remainingSeconds: 0,
-                              remainingTime: '00:00:00'
+                              remainingTime: '00:00:00',
                             };
-                          }
-                          return s;
-                        }));
+                          }));
+                          // Full refresh to pick up any server-side state
+                          const updated = await fetchStations();
+                          setStations(updated);
+                        } catch (err) {
+                          console.error('Failed to end session:', err);
+                          alert('Failed to end session. Please try again.');
+                        }
                       }}
                       onCollect={() => handleCollectMoney(station)}
                       onPrint={() => handlePrintReceipt(station)}
@@ -582,8 +623,8 @@ export default function App() {
             </motion.div>
           )}
 
-          {activeTab === 'reports' && (
-            <motion.div 
+          {!isLoading && activeTab === 'reports' && (
+            <motion.div
               key="reports"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -625,7 +666,7 @@ export default function App() {
                   
                   <div className="h-64 w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={REVENUE_HISTORY}>
+                      <BarChart data={revenueHistory}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#464752" vertical={false} opacity={0.2} />
                         <XAxis 
                           dataKey="time" 
@@ -638,7 +679,7 @@ export default function App() {
                           contentStyle={{ backgroundColor: '#1c1f2b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
                         />
                         <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                          {REVENUE_HISTORY.map((entry, index) => (
+                          {revenueHistory.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={entry.value > 3000 ? '#69daff' : '#222532'} />
                           ))}
                         </Bar>
@@ -772,8 +813,8 @@ export default function App() {
             </motion.div>
           )}
 
-          {activeTab === 'settings' && (
-            <motion.div 
+          {!isLoading && activeTab === 'settings' && (
+            <motion.div
               key="settings"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -786,6 +827,7 @@ export default function App() {
                   onClick={() => {
                     if (isAdmin) {
                       setIsAdmin(false);
+                      setAdminToken(null);
                     } else {
                       setShowPinModal(true);
                     }
@@ -816,7 +858,14 @@ export default function App() {
                         <p className="text-xs text-on-surface-variant">Automatically close sessions when timer hits zero</p>
                       </div>
                       <div 
-                        onClick={() => setAutoEndSessions(!autoEndSessions)}
+                        onClick={() => {
+                          const newValue = !autoEndSessions;
+                          setAutoEndSessions(newValue);
+                          if (isAdmin && adminToken) {
+                            saveSettings(adminToken, { auto_end_sessions: newValue })
+                              .catch(err => console.error('Failed to persist auto-end setting:', err));
+                          }
+                        }}
                         className={cn(
                           "w-12 h-6 rounded-full relative cursor-pointer transition-colors",
                           autoEndSessions ? "bg-primary" : "bg-surface-container-highest"
@@ -848,7 +897,11 @@ export default function App() {
                     Pricing Tiers (LKR/Hour)
                   </h3>
 
-                  <div className="grid grid-cols-1 gap-12">
+                  {(!ps5Rates || !ps4Rates) && (
+                    <p className="text-on-surface-variant text-sm font-headline uppercase tracking-widest text-center py-8">Loading pricing...</p>
+                  )}
+
+                  {ps5Rates && ps4Rates && <div className="grid grid-cols-1 gap-12">
                     {/* PS5 Pricing */}
                     <div className="space-y-6">
                       <div className="flex items-center gap-3 text-primary">
@@ -1024,12 +1077,12 @@ export default function App() {
                         </table>
                       </div>
                     </div>
-                  </div>
+                  </div>}
 
                   {/* Save Button */}
-                  {isAdmin && (
+                  {isAdmin && ps5Rates && ps4Rates && (
                     <div className="pt-6 flex justify-end">
-                      <button 
+                      <button
                         onClick={handleSaveRates}
                         className="px-8 py-3 bg-primary text-on-primary rounded-xl font-headline font-bold uppercase shadow-[0_0_20px_rgba(105,218,255,0.3)] hover:shadow-[0_0_30px_rgba(105,218,255,0.5)] transition-all active:scale-95 flex items-center gap-2"
                       >
@@ -1109,8 +1162,8 @@ export default function App() {
             station={setupStation} 
             minPrice={minDurationPrice}
             onClose={() => setSetupStation(null)} 
-            onStartTimer={(durationMinutes, players) => {
-              setConfirmSessionData({ stationId: setupStation.id, duration: durationMinutes, players });
+            onStartTimer={(players, startTime, endTime) => {
+              setConfirmSessionData({ stationId: setupStation.id, players, startTime, endTime });
               setSetupStation(null);
             }}
           />
@@ -1128,32 +1181,27 @@ export default function App() {
           <StartSessionConfirmationModal
             stationId={confirmSessionData.stationId}
             onClose={() => setConfirmSessionData(null)}
-            onConfirm={() => {
-              const { stationId, duration, players } = confirmSessionData;
-              setStations(prev => prev.map(s => {
-                if (s.id === stationId) {
-                  const seconds = duration * 60;
-                  return {
-                    ...s,
-                    status: 'busy',
-                    remainingSeconds: seconds,
-                    totalSeconds: seconds,
-                    remainingTime: secondsToTime(seconds),
-                    players: players,
-                    user: `User_${Math.floor(Math.random() * 1000)}`
-                  };
-                }
-                return s;
-              }));
+            onConfirm={async () => {
+              const { stationId, players, startTime, endTime } = confirmSessionData;
+              try {
+                await startSession(stationId, players, startTime, endTime);
+                // Refresh from server so we get the authoritative session state
+                const updated = await fetchStations();
+                setStations(updated);
+              } catch (err) {
+                console.error('Failed to start session:', err);
+                alert('Failed to start session. Please try again.');
+              }
               setConfirmSessionData(null);
             }}
           />
         )}
 
-        <AdminPinModal 
-          isOpen={showPinModal} 
-          onClose={() => setShowPinModal(false)} 
-          onSuccess={() => {
+        <AdminPinModal
+          isOpen={showPinModal}
+          onClose={() => setShowPinModal(false)}
+          onSuccess={(token: string) => {
+            setAdminToken(token);
             setIsAdmin(true);
             setShowPinModal(false);
           }}
@@ -1163,25 +1211,36 @@ export default function App() {
   );
 }
 
-const AdminPinModal: React.FC<{ 
-  isOpen: boolean; 
-  onClose: () => void; 
-  onSuccess: () => void;
+const AdminPinModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess: (token: string) => void;
 }> = ({ isOpen, onClose, onSuccess }) => {
   const [pin, setPin] = useState('');
   const [error, setError] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (pin === '2157') {
-      onSuccess();
-      setPin('');
-      setError(false);
-    } else {
+    if (!pin || isVerifying) return;
+    setIsVerifying(true);
+    try {
+      const result = await verifyAdminPin(pin);
+      if (result.success && result.token) {
+        onSuccess(result.token);
+        setPin('');
+        setError(false);
+      } else {
+        setError(true);
+        setPin('');
+        setTimeout(() => setError(false), 2000);
+      }
+    } catch {
       setError(true);
       setPin('');
-      // Reset error after a bit
       setTimeout(() => setError(false), 2000);
+    } finally {
+      setIsVerifying(false);
     }
   };
 
@@ -1231,11 +1290,12 @@ const AdminPinModal: React.FC<{
               >
                 Cancel
               </button>
-              <button 
+              <button
                 type="submit"
-                className="flex-1 px-4 py-3 bg-primary text-on-primary rounded-xl font-headline font-bold text-xs uppercase shadow-[0_0_15px_rgba(105,218,255,0.3)] active:scale-95 transition-transform"
+                disabled={isVerifying}
+                className="flex-1 px-4 py-3 bg-primary text-on-primary rounded-xl font-headline font-bold text-xs uppercase shadow-[0_0_15px_rgba(105,218,255,0.3)] active:scale-95 transition-transform disabled:opacity-60 disabled:cursor-wait"
               >
-                Verify
+                {isVerifying ? 'Verifying...' : 'Verify'}
               </button>
             </div>
           </form>
@@ -1407,7 +1467,7 @@ interface SessionSetupModalProps {
   station: Station;
   minPrice: number;
   onClose: () => void;
-  onStartTimer: (duration: number, players: number) => void;
+  onStartTimer: (players: number, startTime: string, endTime: string) => void;
 }
 
 function TerminateSessionModal({ stationId, onClose, onConfirm }: { stationId: string, onClose: () => void, onConfirm: (reason: string) => void }) {
@@ -1554,17 +1614,17 @@ function SessionSetupModal({ station, minPrice, onClose, onStartTimer }: Session
   const [playerCount, setPlayerCount] = useState(1);
   const [duration, setDuration] = useState(60);
   const [isCustom, setIsCustom] = useState(false);
-  const [customValue, setCustomValue] = useState("90");
+  const [customValue, setCustomValue] = useState('90');
 
-  const playerType = 
-    playerCount === 4 ? 'squad' : 
-    playerCount === 3 ? 'trio' : 
-    playerCount === 2 ? 'duo' : 
+  const playerType =
+    playerCount === 4 ? 'squad' :
+    playerCount === 3 ? 'trio' :
+    playerCount === 2 ? 'duo' :
     'single';
-  
+
   const rates = station.rates[playerType];
-  const cost = rates.hourly;
-  
+  const cost  = rates.hourly;
+
   let totalCost = 0;
   if (duration <= 30 && rates.thirtyMin) {
     totalCost = rates.thirtyMin;
@@ -1575,8 +1635,17 @@ function SessionSetupModal({ station, minPrice, onClose, onStartTimer }: Session
   } else {
     totalCost = (cost * duration) / 60;
   }
-  
+
   totalCost = Math.max(totalCost, minPrice);
+
+  // Derive startTime / endTime from current clock + selected duration
+  function getTimePair(): { startTime: string; endTime: string } {
+    const now   = new Date();
+    const start = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    const end   = new Date(now.getTime() + duration * 60_000);
+    const endStr = `${String(end.getHours()).padStart(2,'0')}:${String(end.getMinutes()).padStart(2,'0')}`;
+    return { startTime: start, endTime: endStr };
+  }
 
   return (
     <motion.div 
@@ -1650,55 +1719,52 @@ function SessionSetupModal({ station, minPrice, onClose, onStartTimer }: Session
               </h2>
               <span className="font-label text-[10px] text-on-surface-variant tracking-widest uppercase">MISSION LENGTH</span>
             </div>
-            
+
             <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 mb-4">
               {[30, 60, 120, 180, 240, 300, 360, 420, 480].map((d) => (
-                <button 
+                <button
                   key={d}
-                  onClick={() => {
-                    setDuration(d);
-                    setIsCustom(false);
-                  }}
+                  onClick={() => { setDuration(d); setIsCustom(false); }}
                   className={cn(
-                    "flex flex-col items-center justify-center py-3 rounded-lg transition-all border",
+                    'flex flex-col items-center justify-center py-3 rounded-lg transition-all border',
                     duration === d && !isCustom
-                      ? "border-secondary bg-secondary/10 shadow-[0_0_10px_rgba(129,151,255,0.2)]" 
-                      : "bg-surface-container-high hover:bg-surface-bright border-transparent"
+                      ? 'border-secondary bg-secondary/10 shadow-[0_0_10px_rgba(129,151,255,0.2)]'
+                      : 'bg-surface-container-high hover:bg-surface-bright border-transparent'
                   )}
                 >
-                  <span className={cn("font-headline text-lg font-bold", duration === d && !isCustom ? "text-secondary" : "text-on-surface")}>
+                  <span className={cn('font-headline text-lg font-bold', duration === d && !isCustom ? 'text-secondary' : 'text-on-surface')}>
                     {d < 60 ? d : d / 60}
                   </span>
-                  <span className={cn("font-label text-[8px] tracking-tighter uppercase", duration === d && !isCustom ? "text-secondary/80" : "text-on-surface-variant")}>
+                  <span className={cn('font-label text-[8px] tracking-tighter uppercase', duration === d && !isCustom ? 'text-secondary/80' : 'text-on-surface-variant')}>
                     {d < 60 ? 'MINS' : 'HOURS'}
                   </span>
                 </button>
               ))}
-              <button 
+              <button
                 onClick={() => setIsCustom(true)}
                 className={cn(
-                  "flex flex-col items-center justify-center py-3 rounded-lg transition-all border",
+                  'flex flex-col items-center justify-center py-3 rounded-lg transition-all border',
                   isCustom
-                    ? "border-secondary bg-secondary/10 shadow-[0_0_10px_rgba(129,151,255,0.2)]" 
-                    : "bg-surface-container-high hover:bg-surface-bright border-transparent"
+                    ? 'border-secondary bg-secondary/10 shadow-[0_0_10px_rgba(129,151,255,0.2)]'
+                    : 'bg-surface-container-high hover:bg-surface-bright border-transparent'
                 )}
               >
-                <Settings className={cn("w-5 h-5 mb-1", isCustom ? "text-secondary" : "text-on-surface-variant")} />
-                <span className={cn("font-label text-[8px] tracking-tighter uppercase", isCustom ? "text-secondary/80" : "text-on-surface-variant")}>
+                <Settings className={cn('w-5 h-5 mb-1', isCustom ? 'text-secondary' : 'text-on-surface-variant')} />
+                <span className={cn('font-label text-[8px] tracking-tighter uppercase', isCustom ? 'text-secondary/80' : 'text-on-surface-variant')}>
                   Custom
                 </span>
               </button>
             </div>
 
             {isCustom && (
-              <motion.div 
+              <motion.div
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
                 className="flex items-center gap-4 p-4 bg-surface-container rounded-xl border border-secondary/20"
               >
                 <div className="flex-1">
                   <p className="text-[10px] font-bold text-on-surface-variant uppercase mb-1">Enter Minutes</p>
-                  <input 
+                  <input
                     type="number"
                     value={customValue}
                     onChange={(e) => {
@@ -1741,10 +1807,10 @@ function SessionSetupModal({ station, minPrice, onClose, onStartTimer }: Session
                   RATE BREAKDOWN
                 </div>
                 <p className="text-sm font-medium text-on-surface-variant uppercase">
-                  {duration <= 30 && rates.thirtyMin ? '30m Package' : 
+                  {duration <= 30 && rates.thirtyMin ? '30m Package' :
                    duration === 180 && rates.threeHour ? '3hr Package' :
                    duration === 300 && rates.fiveHour ? '5hr Package' :
-                   `Base Rate: LKR ${cost} (${playerCount} Player)`}
+                   `Base Rate: LKR ${cost}/hr (${playerCount} Player)`}
                 </p>
                 <p className="text-xs text-on-surface-variant/60 uppercase">Console: {station.type}-X High Performance</p>
               </div>
@@ -1760,7 +1826,7 @@ function SessionSetupModal({ station, minPrice, onClose, onStartTimer }: Session
               CANCEL
             </button>
             <button 
-              onClick={() => onStartTimer(duration, playerCount)}
+              onClick={() => { if (duration > 0) { const { startTime, endTime } = getTimePair(); onStartTimer(playerCount, startTime, endTime); } }}
               className="flex-[2] py-4 px-6 rounded-xl bg-gradient-to-br from-primary to-primary-container font-headline font-bold text-on-primary shadow-[0_0_20px_rgba(105,218,255,0.3)] hover:shadow-[0_0_30px_rgba(105,218,255,0.5)] transition-all active:scale-95 flex items-center justify-center gap-3 uppercase"
             >
               <Play className="w-5 h-5 fill-current" />
