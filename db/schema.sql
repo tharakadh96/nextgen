@@ -14,7 +14,6 @@
 CREATE TABLE IF NOT EXISTS stations (
   id          TEXT    PRIMARY KEY,           -- e.g. "PS5-01"
   type        TEXT    NOT NULL               -- 'PS5' | 'PS4'
-              CHECK (type IN ('PS5', 'PS4'))
 );
 
 -- ---------------------------------------------------------------------------
@@ -23,7 +22,7 @@ CREATE TABLE IF NOT EXISTS stations (
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS pricing (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  platform        TEXT    NOT NULL CHECK (platform IN ('PS5', 'PS4')),
+  platform        TEXT    NOT NULL,
   player_tier     TEXT    NOT NULL CHECK (player_tier IN ('single', 'duo', 'trio', 'squad')),
   price_thirty_min  INTEGER NOT NULL DEFAULT 0,
   price_one_hour    INTEGER NOT NULL DEFAULT 0,
@@ -86,6 +85,8 @@ CREATE TABLE IF NOT EXISTS settings (
 
 -- Default settings rows (INSERT OR IGNORE so re-runs are safe)
 INSERT OR IGNORE INTO settings (key, value) VALUES
-  ('admin_pin',        '1234'),
-  ('auto_end_sessions', 'true'),
-  ('min_duration_price', '30');
+  ('admin_pin',           '1234'),
+  ('auto_end_sessions',   'true'),
+  ('min_duration_price',  '30'),
+  ('staff_username',      'nextgen'),
+  ('staff_password_hash', '');

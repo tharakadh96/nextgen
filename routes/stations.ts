@@ -21,7 +21,7 @@ const router = Router();
 
 interface StationRow {
   id:     string;
-  type:   'PS5' | 'PS4';
+  type:   string;
   status: 'available' | 'busy' | 'completed';
   active_session_id:      string | null;
   pending_revenue:        number | null;
@@ -79,10 +79,17 @@ function computeSession(startTime: string, endTime: string): {
   if (durationMinutes <= 0) durationMinutes += 24 * 60; // overnight
 
   const durationSeconds = durationMinutes * 60;
-  const endsAt          = new Date(Date.now() + durationSeconds * 1000).toISOString();
-  const durationLabel   = `${startTime} - ${endTime}`;
 
-  return { endsAt, durationSeconds, durationLabel };
+  // Anchor endsAt to the actual endTime clock on today's date (tomorrow if overnight)
+  const candidate = new Date();
+  candidate.setHours(eh, em, 0, 0);
+  if (candidate.getTime() <= Date.now()) candidate.setDate(candidate.getDate() + 1);
+
+  return {
+    endsAt:        candidate.toISOString(),
+    durationSeconds,
+    durationLabel: `${startTime} - ${endTime}`,
+  };
 }
 
 /**
@@ -148,23 +155,31 @@ async function calculateRevenue(
 
   if (!pricing) return minPrice;
 
+  const GRACE = 5; // minutes grace period after each milestone
   const durationMinutes = durationSeconds / 60;
 
+  // Apply grace period: if within 5 minutes over a milestone, treat as that milestone
+  let billedMinutes = durationMinutes;
+  if (durationMinutes > 30  && durationMinutes <= 30  + GRACE) billedMinutes = 30;
+  if (durationMinutes > 60  && durationMinutes <= 60  + GRACE) billedMinutes = 60;
+  if (durationMinutes > 180 && durationMinutes <= 180 + GRACE) billedMinutes = 180;
+  if (durationMinutes > 300 && durationMinutes <= 300 + GRACE) billedMinutes = 300;
+
   let revenue: number;
-  if (durationMinutes <= 30) {
+  if (billedMinutes <= 30) {
     revenue = pricing.price_thirty_min;
-  } else if (durationMinutes <= 60) {
+  } else if (billedMinutes <= 60) {
     revenue = pricing.price_one_hour;
-  } else if (durationMinutes <= 180) {
-    revenue = durationMinutes === 180
+  } else if (billedMinutes <= 180) {
+    revenue = billedMinutes === 180
       ? pricing.price_three_hour
-      : Math.round(pricing.price_one_hour * (durationMinutes / 60));
-  } else if (durationMinutes <= 300) {
-    revenue = durationMinutes === 300
+      : Math.round(pricing.price_one_hour * (billedMinutes / 60));
+  } else if (billedMinutes <= 300) {
+    revenue = billedMinutes === 300
       ? pricing.price_five_hour
-      : Math.round(pricing.price_one_hour * (durationMinutes / 60));
+      : Math.round(pricing.price_one_hour * (billedMinutes / 60));
   } else {
-    revenue = Math.round(pricing.price_one_hour * (durationMinutes / 60));
+    revenue = Math.round(pricing.price_one_hour * (billedMinutes / 60));
   }
 
   return Math.max(revenue, minPrice);
@@ -573,6 +588,192 @@ router.post('/:id/collect', async (req: Request, res: Response) => {
   } catch (err) {
     console.error(`[POST /api/stations/${id}/collect]`, err);
     res.status(500).json({ error: 'Failed to collect revenue' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/stations/:id/extend
+// Body: { minutes: number }
+// ---------------------------------------------------------------------------
+router.post('/:id/extend', async (req: Request, res: Response) => {
+  const { id }      = req.params;
+  const { minutes } = req.body as { minutes?: number };
+
+  if (typeof minutes !== 'number' || minutes < 1 || minutes > 480) {
+    res.status(400).json({ error: 'minutes must be a number between 1 and 480' });
+    return;
+  }
+
+  try {
+    const db = await getDb();
+
+    const stateRow = await db.get<{ active_session_id: string }>(
+      `SELECT ss.active_session_id FROM station_state ss
+       WHERE ss.station_id = ? AND ss.status = 'busy'`,
+      id
+    );
+
+    if (!stateRow) {
+      res.status(409).json({ error: `Station ${id} has no active session` });
+      return;
+    }
+
+    const session = await db.get<SessionRow>(
+      `SELECT * FROM sessions WHERE id = ?`,
+      stateRow.active_session_id
+    );
+
+    if (!session || !session.ends_at) {
+      res.status(409).json({ error: 'Session has no scheduled end time to extend' });
+      return;
+    }
+
+    const newEndsAt  = new Date(new Date(session.ends_at).getTime() + minutes * 60_000).toISOString();
+    const newEndDate = new Date(newEndsAt);
+    const newEndTime = `${String(newEndDate.getHours()).padStart(2,'0')}:${String(newEndDate.getMinutes()).padStart(2,'0')}`;
+
+    const [sh, sm]  = (session.start_time ?? '00:00').split(':').map(Number);
+    const [eh, em]  = newEndTime.split(':').map(Number);
+    let newDurMins  = (eh * 60 + em) - (sh * 60 + sm);
+    if (newDurMins <= 0) newDurMins += 24 * 60;
+    const newDurationSeconds = newDurMins * 60;
+
+    await db.run(
+      `UPDATE sessions
+       SET ends_at = ?, end_time = ?, duration_seconds = ?, duration_label = ?
+       WHERE id = ?`,
+      newEndsAt, newEndTime, newDurationSeconds,
+      `${session.start_time} - ${newEndTime}`,
+      session.id
+    );
+
+    const remaining = remainingSeconds(newEndsAt);
+
+    res.json({
+      data: {
+        stationId:       id,
+        endsAt:          newEndsAt,
+        endTime:         newEndTime,
+        remainingSeconds: remaining,
+        remainingTime:   formatCountdown(remaining),
+        durationSeconds: newDurationSeconds,
+      },
+    });
+  } catch (err) {
+    console.error(`[POST /api/stations/${id}/extend]`, err);
+    res.status(500).json({ error: 'Failed to extend session' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/stations
+// Body: { id: string, type: string, pricingTemplate: 'PS5' | 'PS4' }
+// ---------------------------------------------------------------------------
+router.post('/', async (req: Request, res: Response) => {
+  const { id, type, pricingTemplate } = req.body as {
+    id?: string;
+    type?: string;
+    pricingTemplate?: string;
+  };
+
+  if (!id || typeof id !== 'string' || !/^[A-Za-z0-9_\-]{2,20}$/.test(id.trim())) {
+    res.status(400).json({ error: 'id must be 2–20 alphanumeric/dash/underscore characters' });
+    return;
+  }
+  if (!type || typeof type !== 'string' || type.trim().length < 2) {
+    res.status(400).json({ error: 'type is required (e.g. PS5, PS4, PC)' });
+    return;
+  }
+  if (!pricingTemplate || !['PS5', 'PS4'].includes(pricingTemplate)) {
+    res.status(400).json({ error: 'pricingTemplate must be PS5 or PS4' });
+    return;
+  }
+
+  const stationId = id.trim().toUpperCase();
+  const stationType = type.trim().toUpperCase();
+
+  try {
+    const db = await getDb();
+
+    const existing = await db.get(`SELECT id FROM stations WHERE id = ?`, stationId);
+    if (existing) {
+      res.status(409).json({ error: `Station ${stationId} already exists` });
+      return;
+    }
+
+    // Copy pricing from template if this type doesn't have pricing yet
+    const hasPricing = await db.get(`SELECT id FROM pricing WHERE platform = ? LIMIT 1`, stationType);
+    if (!hasPricing) {
+      const templatePricing = await db.all<PricingRow[]>(
+        `SELECT * FROM pricing WHERE platform = ?`, pricingTemplate
+      );
+      const insertP = await db.prepare(`
+        INSERT OR IGNORE INTO pricing (platform, player_tier, price_thirty_min, price_one_hour, price_three_hour, price_five_hour)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      for (const row of templatePricing) {
+        await insertP.run(stationType, row.player_tier, row.price_thirty_min, row.price_one_hour, row.price_three_hour, row.price_five_hour);
+      }
+      await insertP.finalize();
+    }
+
+    await db.run('BEGIN TRANSACTION');
+    try {
+      await db.run(`INSERT INTO stations (id, type) VALUES (?, ?)`, stationId, stationType);
+      await db.run(`INSERT INTO station_state (station_id, status) VALUES (?, 'available')`, stationId);
+      await db.run('COMMIT');
+    } catch (txErr) {
+      await db.run('ROLLBACK');
+      throw txErr;
+    }
+
+    // Return the new station in the same shape as GET /api/stations
+    const stationRow = { id: stationId, type: stationType, status: 'available' as const, active_session_id: null, pending_revenue: null, actual_seconds_played: null };
+    const stationResponse = await buildStationResponse(db, stationRow);
+
+    res.status(201).json({ data: stationResponse });
+  } catch (err) {
+    console.error('[POST /api/stations]', err);
+    res.status(500).json({ error: 'Failed to add station' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/stations/:id
+// ---------------------------------------------------------------------------
+router.delete('/:id', async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  try {
+    const db = await getDb();
+
+    const stateRow = await db.get<{ status: string }>(
+      `SELECT status FROM station_state WHERE station_id = ?`, id
+    );
+
+    if (!stateRow) {
+      res.status(404).json({ error: `Station ${id} not found` });
+      return;
+    }
+    if (stateRow.status !== 'available') {
+      res.status(409).json({ error: `Station ${id} has an active or pending session — end it first` });
+      return;
+    }
+
+    await db.run('BEGIN TRANSACTION');
+    try {
+      await db.run(`DELETE FROM station_state WHERE station_id = ?`, id);
+      await db.run(`DELETE FROM stations WHERE id = ?`, id);
+      await db.run('COMMIT');
+    } catch (txErr) {
+      await db.run('ROLLBACK');
+      throw txErr;
+    }
+
+    res.json({ data: { stationId: id, deleted: true } });
+  } catch (err) {
+    console.error(`[DELETE /api/stations/${id}]`, err);
+    res.status(500).json({ error: 'Failed to delete station' });
   }
 });
 

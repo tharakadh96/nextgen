@@ -63,6 +63,27 @@ export interface EndSessionResponse {
   endedAt: string;
 }
 
+export interface ExtendSessionResponse {
+  stationId: string;
+  endsAt: string;
+  endTime: string;
+  remainingSeconds: number;
+  remainingTime: string;
+  durationSeconds: number;
+}
+
+export interface AddStationResponse {
+  id: string;
+  type: string;
+  status: string;
+  rates: Station['rates'];
+}
+
+export interface DeleteStationResponse {
+  stationId: string;
+  deleted: boolean;
+}
+
 export interface TerminateSessionResponse {
   stationId: string;
   sessionId: string;
@@ -88,6 +109,36 @@ export interface VerifyPinResponse {
   success: boolean;
   token?: string;
   error?: string;
+}
+
+export interface StaffLoginResponse {
+  success: boolean;
+  token?: string;
+  error?: string;
+}
+
+/** Authenticate as staff; returns a JWT on success. */
+export async function staffLogin(username: string, password: string): Promise<StaffLoginResponse> {
+  try {
+    return await apiFetch<StaffLoginResponse>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    });
+  } catch (err: any) {
+    return { success: false, error: err.message ?? 'Login failed' };
+  }
+}
+
+/** Verify that a staff JWT is still valid. */
+export async function verifyStaffToken(token: string): Promise<boolean> {
+  try {
+    const res = await apiFetch<{ valid: boolean }>('/auth/verify', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return res.valid;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -148,6 +199,43 @@ export async function startSession(
     {
       method: 'POST',
       body: JSON.stringify({ players, startTime, endTime }),
+    }
+  );
+  return result.data;
+}
+
+/** Extend a busy session by a given number of minutes. */
+export async function extendSession(stationId: string, minutes: number): Promise<ExtendSessionResponse> {
+  const result = await apiFetch<{ data: ExtendSessionResponse }>(
+    `/stations/${encodeURIComponent(stationId)}/extend`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ minutes }),
+    }
+  );
+  return result.data;
+}
+
+export async function addStation(
+  id: string,
+  type: string,
+  pricingTemplate: 'PS5' | 'PS4',
+  adminToken: string,
+): Promise<Station> {
+  const result = await apiFetch<{ data: Station }>('/stations', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: JSON.stringify({ id, type, pricingTemplate }),
+  });
+  return result.data;
+}
+
+export async function deleteStation(stationId: string, adminToken: string): Promise<DeleteStationResponse> {
+  const result = await apiFetch<{ data: DeleteStationResponse }>(
+    `/stations/${encodeURIComponent(stationId)}`,
+    {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${adminToken}` },
     }
   );
   return result.data;
@@ -220,6 +308,11 @@ export async function fetchLogs(date: string): Promise<SessionLog[]> {
     `/logs?date=${encodeURIComponent(date)}`
   );
   return result.data;
+}
+
+/** Fetch all session logs between two dates (inclusive). */
+export async function fetchLogsRange(from: string, to: string): Promise<{ data: SessionLog[]; totalRevenue: number }> {
+  return apiFetch(`/logs/range?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
 }
 
 /** Fetch the daily revenue report for a specific date (YYYY-MM-DD). */

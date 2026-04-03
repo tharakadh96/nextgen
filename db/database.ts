@@ -10,6 +10,7 @@
 
 import { open, type Database } from 'sqlite';
 import sqlite3 from 'sqlite3';
+import bcrypt from 'bcrypt';
 import { readFile } from 'fs/promises';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -61,6 +62,54 @@ async function initSchema(db: Database): Promise<void> {
     } catch {
       // Column already exists — safe to ignore
     }
+  }
+
+  // Migration: remove CHECK constraints from stations and pricing to allow custom types
+  const stationsSchema = await db.get<{ sql: string }>(
+    `SELECT sql FROM sqlite_master WHERE type='table' AND name='stations'`
+  );
+  if (stationsSchema?.sql?.includes('CHECK')) {
+    await db.exec('PRAGMA foreign_keys = OFF');
+    await db.exec(`CREATE TABLE stations_new (id TEXT PRIMARY KEY, type TEXT NOT NULL)`);
+    await db.exec(`INSERT INTO stations_new SELECT id, type FROM stations`);
+    await db.exec(`DROP TABLE stations`);
+    await db.exec(`ALTER TABLE stations_new RENAME TO stations`);
+    await db.exec('PRAGMA foreign_keys = ON');
+    console.log('[db] Migrated stations table — removed type CHECK constraint.');
+  }
+
+  const pricingSchema = await db.get<{ sql: string }>(
+    `SELECT sql FROM sqlite_master WHERE type='table' AND name='pricing'`
+  );
+  if (pricingSchema?.sql?.includes("CHECK (platform IN")) {
+    await db.exec('PRAGMA foreign_keys = OFF');
+    await db.exec(`
+      CREATE TABLE pricing_new (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        platform         TEXT    NOT NULL,
+        player_tier      TEXT    NOT NULL CHECK (player_tier IN ('single','duo','trio','squad')),
+        price_thirty_min INTEGER NOT NULL DEFAULT 0,
+        price_one_hour   INTEGER NOT NULL DEFAULT 0,
+        price_three_hour INTEGER NOT NULL DEFAULT 0,
+        price_five_hour  INTEGER NOT NULL DEFAULT 0,
+        UNIQUE (platform, player_tier)
+      )
+    `);
+    await db.exec(`INSERT OR IGNORE INTO pricing_new SELECT * FROM pricing`);
+    await db.exec(`DROP TABLE pricing`);
+    await db.exec(`ALTER TABLE pricing_new RENAME TO pricing`);
+    await db.exec('PRAGMA foreign_keys = ON');
+    console.log('[db] Migrated pricing table — removed platform CHECK constraint.');
+  }
+
+  // Migration: ensure staff_password_hash is populated (existing DBs may have empty value)
+  const hashRow = await db.get<{ value: string }>(
+    "SELECT value FROM settings WHERE key = 'staff_password_hash'"
+  );
+  if (hashRow && !hashRow.value) {
+    const hash = await bcrypt.hash('cafe2024', 10);
+    await db.run("UPDATE settings SET value = ? WHERE key = 'staff_password_hash'", hash);
+    console.log('[db] Migrated staff_password_hash — default password hashed.');
   }
 
   console.log('[db] Schema initialized.');

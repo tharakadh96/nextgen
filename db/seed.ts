@@ -7,6 +7,7 @@
  */
 
 import { type Database } from 'sqlite';
+import bcrypt from 'bcrypt';
 
 // ---------------------------------------------------------------------------
 // Station definitions
@@ -115,6 +116,19 @@ export async function seedDatabase(db: Database): Promise<void> {
     }
 
     await insertPricing.finalize();
+
+    // -- Staff credentials (hash default password if not yet set) ----------
+    const hashRow = await db.get<{ value: string }>(
+      "SELECT value FROM settings WHERE key = 'staff_password_hash'"
+    );
+    if (!hashRow || !hashRow.value) {
+      const hash = await bcrypt.hash('cafe2024', 10);
+      await db.run(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('staff_password_hash', ?)",
+        hash
+      );
+      console.log('[seed] Default staff password hashed and stored.');
+    }
 
     await db.run('COMMIT');
     console.log('[seed] Done.');

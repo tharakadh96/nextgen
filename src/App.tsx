@@ -3,60 +3,65 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Terminal, 
-  LayoutDashboard, 
-  BarChart3, 
-  Settings, 
-  Plus, 
-  TrendingUp, 
-  Activity, 
-  Users, 
-  Timer, 
-  Info, 
-  Play, 
-  X,
-  ChevronRight,
-  Monitor,
-  Gamepad2,
-  Clock,
-  Download,
-  Lock,
-  Unlock,
-  Save,
-  Printer,
-  FileText
-} from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer, 
-  Cell 
-} from 'recharts';
 import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-import { Station, SessionLog, RevenueData } from './types';
 import {
-  fetchStations,
-  fetchPricing,
-  fetchSettings,
-  fetchLogs,
-  fetchDailyReport,
-  startSession,
-  endSession,
-  terminateSession,
-  collectSession,
-  savePricing,
-  saveSettings,
-  verifyAdminPin,
-  PlatformRates,
+    Activity,
+    BarChart3,
+    Clock,
+    CalendarRange,
+    Download,
+    Gamepad2,
+    Info,
+    LayoutDashboard,
+    Lock,
+    LogOut,
+    Monitor,
+    Play,
+    Plus,
+    Printer,
+    Save,
+    Settings,
+    Terminal,
+    Timer,
+    Trash2,
+    TrendingUp,
+    Unlock,
+    Users,
+    X
+} from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+    Bar,
+    BarChart,
+    CartesianGrid,
+    Cell,
+    ResponsiveContainer,
+    Tooltip,
+    XAxis
+} from 'recharts';
+import { twMerge } from 'tailwind-merge';
+import {
+    addStation,
+    collectSession,
+    deleteStation,
+    endSession,
+    extendSession,
+    fetchDailyReport,
+    fetchLogs,
+    fetchPricing,
+    fetchSettings,
+    fetchStations,
+    PlatformRates,
+    savePricing,
+    startSession,
+    terminateSession,
+    verifyAdminPin,
+    staffLogin,
+    verifyStaffToken,
+    fetchLogsRange
 } from './api';
+import { RevenueData, SessionLog, Station } from './types';
 
 // Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -81,19 +86,105 @@ function secondsToTime(totalSeconds: number): string {
 // Session storage key for persisting the admin JWT across page reloads
 const ADMIN_TOKEN_KEY = 'nextgen_admin_token';
 
+// Session storage key for persisting the staff JWT across page reloads
+const STAFF_TOKEN_KEY = 'nextgen_staff_token';
+
+function LoginPage({ onLogin }: { onLogin: (token: string) => void }) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [shaking, setShaking] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    const result = await staffLogin(username, password);
+    setLoading(false);
+    if (result.success && result.token) {
+      sessionStorage.setItem(STAFF_TOKEN_KEY, result.token);
+      onLogin(result.token);
+    } else {
+      setError(result.error ?? 'Invalid username or password');
+      setShaking(true);
+      setTimeout(() => setShaking(false), 500);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-background text-on-surface font-body flex items-center justify-center">
+      <motion.div
+        animate={shaking ? { x: [-10, 10, -8, 8, -4, 4, 0] } : { x: 0 }}
+        transition={{ duration: 0.5 }}
+        className="w-full max-w-sm"
+      >
+        <div className="glass-card rounded-2xl border border-white/10 p-8 shadow-[0_0_40px_rgba(105,218,255,0.08)]">
+          <div className="flex flex-col items-center mb-8">
+            <Terminal className="w-10 h-10 text-primary mb-3" />
+            <h1 className="font-headline text-2xl font-black text-primary tracking-tighter uppercase">Nextgen Gaming</h1>
+            <p className="text-xs text-on-surface-variant font-label tracking-widest uppercase mt-1">Staff Access Portal</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-[10px] font-headline font-bold text-on-surface-variant tracking-[0.2em] uppercase mb-1.5">Username</label>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => { setUsername(e.target.value); setError(''); }}
+                className="w-full bg-surface-container border border-white/10 rounded-lg px-4 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30 transition-colors"
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-headline font-bold text-on-surface-variant tracking-[0.2em] uppercase mb-1.5">Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); setError(''); }}
+                className="w-full bg-surface-container border border-white/10 rounded-lg px-4 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30 transition-colors"
+              />
+            </div>
+
+            {error && (
+              <p className="text-xs text-red-400 font-label tracking-wide">{error}</p>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full mt-2 bg-primary text-on-primary font-headline font-bold text-sm tracking-widest uppercase py-3 rounded-lg hover:bg-primary/90 transition-colors shadow-[0_0_16px_rgba(105,218,255,0.2)] disabled:opacity-50"
+            >
+              {loading ? 'Verifying...' : 'Login'}
+            </button>
+          </form>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 export default function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [authChecking, setAuthChecking] = useState(true);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'reports' | 'settings'>('dashboard');
   const [stations, setStations] = useState<Station[]>([]);
   const [logs, setLogs] = useState<SessionLog[]>([]);
   const [filter, setFilter] = useState<'ALL' | 'PS5' | 'PS4'>('ALL');
   const [setupStation, setSetupStation] = useState<Station | null>(null);
   const [terminateStation, setTerminateStation] = useState<Station | null>(null);
+  const [extendStation, setExtendStation] = useState<Station | null>(null);
+  const [showAddStation, setShowAddStation] = useState(false);
   const [confirmSessionData, setConfirmSessionData] = useState<{ stationId: string, players: number, startTime: string, endTime: string } | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [showPinModal, setShowPinModal] = useState(false);
   const [autoEndSessions, setAutoEndSessions] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [revenueHistory, setRevenueHistory] = useState<RevenueData[]>([]);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportFrom, setExportFrom] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [exportTo, setExportTo] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [exporting, setExporting] = useState(false);
 
   // Admin & Pricing State
   const [isAdmin, setIsAdmin] = useState(false);
@@ -111,6 +202,23 @@ export default function App() {
       setAdminToken(stored);
       setIsAdmin(true);
     }
+  }, []);
+
+  // Verify staff JWT on mount; clear it if expired/invalid
+  useEffect(() => {
+    const token = sessionStorage.getItem(STAFF_TOKEN_KEY);
+    if (!token) {
+      setAuthChecking(false);
+      return;
+    }
+    verifyStaffToken(token).then((valid) => {
+      if (valid) {
+        setIsLoggedIn(true);
+      } else {
+        sessionStorage.removeItem(STAFF_TOKEN_KEY);
+      }
+      setAuthChecking(false);
+    });
   }, []);
 
   // Initial data load on mount
@@ -161,6 +269,20 @@ export default function App() {
       .catch((err) => console.error('Failed to load daily report:', err));
     return () => { cancelled = true; };
   }, [selectedDate]);
+
+  // Refresh reports data whenever the reports tab is opened
+  useEffect(() => {
+    if (activeTab !== 'reports') return;
+    let cancelled = false;
+    Promise.all([fetchLogs(selectedDate), fetchDailyReport(selectedDate)])
+      .then(([logsData, reportData]) => {
+        if (cancelled) return;
+        setLogs(logsData);
+        setRevenueHistory(reportData.hourlyBreakdown);
+      })
+      .catch((err) => console.error('Failed to refresh reports data:', err));
+    return () => { cancelled = true; };
+  }, [activeTab]);
 
   // Persist/clear adminToken in sessionStorage whenever it changes
   useEffect(() => {
@@ -244,10 +366,6 @@ export default function App() {
                     remainingTime: '00:00:00',
                   };
                 }));
-                // Full refresh to stay in sync with any server-side state
-                fetchStations()
-                  .then(setStations)
-                  .catch(err => console.error('Failed to refresh stations after auto-end:', err));
               })
               .catch(err => {
                 console.error(`Auto-end failed for ${station.id}:`, err);
@@ -263,6 +381,48 @@ export default function App() {
 
     return () => clearInterval(interval);
   }, [autoEndSessions]);
+
+  const handleExtendSession = async (station: Station, minutes: number) => {
+    try {
+      const data = await extendSession(station.id, minutes);
+      setStations(prev => prev.map(s => {
+        if (s.id !== station.id) return s;
+        return {
+          ...s,
+          remainingSeconds: data.remainingSeconds,
+          remainingTime: data.remainingTime,
+          totalSeconds: data.durationSeconds,
+        };
+      }));
+    } catch (err) {
+      console.error('Failed to extend session:', err);
+      alert('Failed to extend session. Please try again.');
+    }
+    setExtendStation(null);
+  };
+
+  const handleAddStation = async (id: string, type: string, pricingTemplate: 'PS5' | 'PS4') => {
+    if (!adminToken) return;
+    try {
+      const newStation = await addStation(id, type, pricingTemplate, adminToken);
+      setStations(prev => [...prev, newStation]);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      alert(`Failed to add station: ${msg}`);
+    }
+    setShowAddStation(false);
+  };
+
+  const handleDeleteStation = async (stationId: string) => {
+    if (!adminToken) return;
+    try {
+      await deleteStation(stationId, adminToken);
+      setStations(prev => prev.filter(s => s.id !== stationId));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      alert(`Failed to remove station: ${msg}`);
+    }
+  };
 
   const handleCollectMoney = async (station: Station) => {
     if (station.status !== 'completed') return;
@@ -283,9 +443,19 @@ export default function App() {
       };
       setLogs(prev => [newLog, ...prev]);
 
-      // Refresh stations so the collected station shows as available
-      const updated = await fetchStations();
-      setStations(updated);
+      // Reset the station to available without a full refetch
+      setStations(prev => prev.map(s => {
+        if (s.id !== station.id) return s;
+        return {
+          ...s,
+          status: 'available' as const,
+          pendingRevenue: undefined,
+          actualSecondsPlayed: undefined,
+          remainingSeconds: undefined,
+          remainingTime: undefined,
+          players: undefined,
+        };
+      }));
 
       // Clear the auto-end guard for this station so it can be reused
       autoEndingRef.current.delete(station.id);
@@ -319,9 +489,9 @@ export default function App() {
           <title>Receipt - ${id}</title>
           <style>
             @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=JetBrains+Mono&display=swap');
-            body { 
-              font-family: 'Inter', sans-serif; 
-              padding: 40px; 
+            body {
+              font-family: 'Inter', sans-serif;
+              padding: 40px;
               color: #000;
               max-width: 300px;
               margin: 0 auto;
@@ -390,6 +560,46 @@ export default function App() {
     // Removed as per user request
   };
 
+  const handleExportRange = async () => {
+    setExporting(true);
+    try {
+      const { data, totalRevenue } = await fetchLogsRange(exportFrom, exportTo);
+      if (data.length === 0) {
+        alert('No transactions found for the selected date range.');
+        setExporting(false);
+        return;
+      }
+
+      const headers = ['Machine ID', 'Type', 'Status', 'Players', 'Duration', 'Revenue (LKR)', 'Date'];
+      const rows = data.map(log => [
+        `"${log.machineId}"`,
+        `"${log.type}"`,
+        `"${log.status}"`,
+        log.players,
+        `"${log.duration}"`,
+        log.revenue,
+        `"${log.date}"`
+      ].join(','));
+      rows.push(`,,,,,"Total: ${totalRevenue}",`);
+
+      const csv = [headers.join(','), ...rows].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `nextgen-report-${exportFrom}-to-${exportTo}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setShowExportModal(false);
+    } catch (err) {
+      console.error('Export failed:', err);
+      alert('Export failed. Please try again.');
+    }
+    setExporting(false);
+  };
+
   const handleExportCSV = () => {
     const dailyLogs = logs.filter(l => l.date === selectedDate);
     if (dailyLogs.length === 0) {
@@ -426,21 +636,29 @@ export default function App() {
   // Dashboard Calculations
   const activeMachines = stations.filter(s => s.status === 'busy' || s.status === 'completed').length;
   const totalStations = stations.length;
-  
+
   const today = new Date().toISOString().split('T')[0];
   const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-  
+
   const earningsToday = logs
     .filter(log => log.date === today)
     .reduce((sum, log) => sum + log.revenue, 0);
-    
+
   const earningsYesterday = logs
     .filter(log => log.date === yesterday)
     .reduce((sum, log) => sum + log.revenue, 0);
-    
-  const earningsChange = earningsYesterday === 0 
-    ? 100 
+
+  const earningsChange = earningsYesterday === 0
+    ? 100
     : ((earningsToday - earningsYesterday) / earningsYesterday) * 100;
+
+  if (authChecking) {
+    return <div className="min-h-screen bg-background" />;
+  }
+
+  if (!isLoggedIn) {
+    return <LoginPage onLogin={(_token) => setIsLoggedIn(true)} />;
+  }
 
   return (
     <div className="min-h-screen bg-background text-on-surface font-body overflow-x-hidden">
@@ -450,10 +668,10 @@ export default function App() {
           <Terminal className="w-6 h-6 text-primary" />
           <span className="text-xl font-black text-primary tracking-tighter font-headline uppercase">Nextgen Gaming</span>
         </div>
-        
+
         <div className="flex items-center gap-6">
           <nav className="hidden md:flex items-center gap-8">
-            <button 
+            <button
               onClick={() => setActiveTab('dashboard')}
               className={cn(
                 "font-headline tracking-wider uppercase text-sm font-bold transition-colors px-3 py-1 rounded",
@@ -462,7 +680,7 @@ export default function App() {
             >
               DASHBOARD
             </button>
-            <button 
+            <button
               onClick={() => setActiveTab('reports')}
               className={cn(
                 "font-headline tracking-wider uppercase text-sm font-bold transition-colors px-3 py-1 rounded",
@@ -471,7 +689,7 @@ export default function App() {
             >
               REPORTS
             </button>
-            <button 
+            <button
               onClick={() => setActiveTab('settings')}
               className={cn(
                 "font-headline tracking-wider uppercase text-sm font-bold transition-colors px-3 py-1 rounded",
@@ -481,15 +699,17 @@ export default function App() {
               SETTINGS
             </button>
           </nav>
-          
-          <div className="w-10 h-10 rounded-full border-2 border-primary/30 p-0.5 overflow-hidden cursor-pointer active:scale-95 transition-transform">
-            <img 
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuASPqnDtr6xQHfLt3er5e3Z6bD8wI-P0nEdydrE4JjquLA_ErJxxRsk2C5dkfG2T5E3rB9JCrC5ExKDEstLaOHWwrqxkrykniT2iBUu3kW_M3vJrpaZAJsf20oqpYcHO2tQg4L2QyVx0ZCQO0pwNx1I8F8T-bu17KWtgla5G7Id0oKoa6v80vSlUCL5EISToPDjGr5jpZ65xWCWqGRwmy7CnnfYS2Yd8r0tsLWuknB2HSVCrZILZUhUtuhdqRuZGB3WY2tfPeXygmc" 
-              alt="Profile" 
-              className="w-full h-full object-cover rounded-full"
-              referrerPolicy="no-referrer"
-            />
-          </div>
+
+          <button
+            onClick={() => {
+              sessionStorage.removeItem(STAFF_TOKEN_KEY);
+              setIsLoggedIn(false);
+            }}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-on-surface-variant hover:text-red-400 hover:bg-red-400/10 transition-colors font-headline text-xs font-bold tracking-widest uppercase"
+          >
+            <LogOut className="w-4 h-4" />
+            <span className="hidden md:inline">Logout</span>
+          </button>
         </div>
       </header>
 
@@ -511,7 +731,7 @@ export default function App() {
             </motion.div>
           )}
           {!isLoading && activeTab === 'dashboard' && (
-            <motion.div 
+            <motion.div
               key="dashboard"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -539,7 +759,7 @@ export default function App() {
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="bg-surface-container-highest rounded-xl p-6 border-l-4 border-secondary shadow-lg">
                   <h2 className="font-headline text-xs text-on-surface-variant tracking-[0.1em] mb-4 uppercase">Earnings Today</h2>
                   <div className="flex flex-col gap-1">
@@ -552,7 +772,7 @@ export default function App() {
                     </span>
                   </div>
                   <div className="mt-6 h-2 w-full bg-surface-container rounded-full overflow-hidden">
-                    <motion.div 
+                    <motion.div
                       initial={{ width: 0 }}
                       animate={{ width: `${Math.min(100, (earningsToday / 5000) * 100)}%` }}
                       className="h-full bg-secondary rounded-full shadow-[0_0_8px_rgba(129,151,255,0.5)]"
@@ -570,7 +790,7 @@ export default function App() {
                   </h3>
                   <div className="flex gap-2 bg-surface-container-high p-1 rounded-full">
                     {(['ALL', 'PS5', 'PS4'] as const).map((f) => (
-                      <button 
+                      <button
                         key={f}
                         onClick={() => setFilter(f)}
                         className={cn(
@@ -586,9 +806,9 @@ export default function App() {
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                   {filteredStations.map((station) => (
-                    <StationCard 
-                      key={station.id} 
-                      station={station} 
+                    <StationCard
+                      key={station.id}
+                      station={station}
                       onStart={() => setSetupStation(station)}
                       onTerminate={() => setTerminateStation(station)}
                       onEnd={async () => {
@@ -606,16 +826,16 @@ export default function App() {
                               remainingTime: '00:00:00',
                             };
                           }));
-                          // Full refresh to pick up any server-side state
-                          const updated = await fetchStations();
-                          setStations(updated);
                         } catch (err) {
                           console.error('Failed to end session:', err);
                           alert('Failed to end session. Please try again.');
                         }
                       }}
+                      onExtend={() => setExtendStation(station)}
                       onCollect={() => handleCollectMoney(station)}
                       onPrint={() => handlePrintReceipt(station)}
+                      onDelete={isAdmin ? () => handleDeleteStation(station.id) : undefined}
+                      isAdmin={isAdmin}
                     />
                   ))}
                 </div>
@@ -637,10 +857,17 @@ export default function App() {
                   <p className="text-on-surface-variant font-label text-sm tracking-widest mt-1 uppercase">REAL-TIME FINANCIAL TELEMETRY</p>
                 </div>
                 <div className="flex items-center gap-4">
+                  <button
+                    onClick={() => setShowExportModal(true)}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary/10 border border-primary/20 text-primary font-headline font-bold text-xs tracking-widest uppercase hover:bg-primary/20 transition-colors"
+                  >
+                    <CalendarRange className="w-4 h-4" />
+                    Export
+                  </button>
                   <div className="glass-card px-4 py-2 rounded-xl border border-white/5 flex flex-col items-end">
                     <span className="text-[10px] font-headline font-bold text-on-surface-variant tracking-[0.2em] uppercase mb-1">Select Date</span>
-                    <input 
-                      type="date" 
+                    <input
+                      type="date"
                       value={selectedDate}
                       onChange={(e) => setSelectedDate(e.target.value)}
                       className="bg-transparent text-sm font-headline font-bold text-primary focus:outline-none cursor-pointer"
@@ -663,18 +890,18 @@ export default function App() {
                     </div>
                     <span className="px-3 py-1 rounded-full bg-primary/10 text-primary text-[10px] font-bold font-headline border border-primary/20">DAILY REPORT</span>
                   </div>
-                  
+
                   <div className="h-64 w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={revenueHistory}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#464752" vertical={false} opacity={0.2} />
-                        <XAxis 
-                          dataKey="time" 
-                          axisLine={false} 
-                          tickLine={false} 
+                        <XAxis
+                          dataKey="time"
+                          axisLine={false}
+                          tickLine={false}
                           tick={{ fill: '#aaaab7', fontSize: 10, fontFamily: 'Space Grotesk' }}
                         />
-                        <Tooltip 
+                        <Tooltip
                           cursor={{ fill: 'rgba(105, 218, 255, 0.1)' }}
                           contentStyle={{ backgroundColor: '#1c1f2b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
                         />
@@ -686,7 +913,7 @@ export default function App() {
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
-                  
+
                   <div className="mt-4 flex justify-between text-[10px] font-headline font-bold text-on-surface-variant tracking-widest uppercase">
                     <span>Morning Shift</span>
                     <span>Peak Hours</span>
@@ -704,7 +931,7 @@ export default function App() {
                         const totalRevenue = dailyLogs.reduce((acc, curr) => acc + curr.revenue, 0);
                         const typeRevenue = dailyLogs.filter(l => l.type === type).reduce((acc, curr) => acc + curr.revenue, 0);
                         const percentage = totalRevenue > 0 ? Math.round((typeRevenue / totalRevenue) * 100) : 0;
-                        
+
                         return (
                           <div key={type} className="relative">
                             <div className="flex justify-between items-end mb-2">
@@ -722,7 +949,7 @@ export default function App() {
                         );
                       })}
                     </div>
-                    
+
                     <div className="mt-12 p-4 bg-primary/5 rounded-lg border border-primary/10">
                       <div className="flex items-center gap-3 text-primary">
                         <TrendingUp className="w-4 h-4" />
@@ -738,7 +965,7 @@ export default function App() {
                 <section className="lg:col-span-12 glass-card rounded-xl border border-white/5 overflow-hidden">
                   <div className="px-6 py-4 border-b border-white/5 flex justify-between items-center bg-surface-container-low/50">
                     <h2 className="font-headline font-bold text-sm tracking-[0.2em] text-on-surface uppercase">Daily Log: {selectedDate}</h2>
-                    <button 
+                    <button
                       onClick={handleExportCSV}
                       className="text-[10px] font-headline font-bold text-primary hover:underline transition-all flex items-center gap-1 uppercase"
                     >
@@ -771,7 +998,7 @@ export default function App() {
                               <div className="flex flex-col gap-1">
                                 <span className={cn(
                                   "text-[10px] font-headline px-2 py-0.5 rounded border uppercase font-bold w-fit",
-                                  log.status === 'completed' ? "border-primary/30 text-primary" : 
+                                  log.status === 'completed' ? "border-primary/30 text-primary" :
                                   log.status === 'terminated' ? "border-error/30 text-error" :
                                   "border-white/10 text-on-surface-variant"
                                 )}>
@@ -788,7 +1015,7 @@ export default function App() {
                             <td className="px-6 py-5 text-center font-label text-sm text-on-surface-variant">{log.duration}</td>
                             <td className="px-6 py-5 text-right font-headline font-bold text-primary">LKR {log.revenue.toLocaleString()}</td>
                             <td className="px-6 py-5 text-right">
-                              <button 
+                              <button
                                 onClick={() => handlePrintReceipt(log)}
                                 className="p-2 hover:bg-white/10 rounded-lg transition-colors text-on-surface-variant hover:text-primary"
                                 title="Reprint Receipt"
@@ -823,7 +1050,7 @@ export default function App() {
             >
               <div className="flex justify-between items-center">
                 <h1 className="font-headline text-4xl font-bold tracking-tight text-on-surface uppercase">Settings</h1>
-                <button 
+                <button
                   onClick={() => {
                     if (isAdmin) {
                       setIsAdmin(false);
@@ -834,8 +1061,8 @@ export default function App() {
                   }}
                   className={cn(
                     "flex items-center gap-2 px-4 py-2 rounded-xl font-headline font-bold text-xs transition-all",
-                    isAdmin 
-                      ? "bg-primary text-on-primary shadow-[0_0_15px_rgba(105,218,255,0.4)]" 
+                    isAdmin
+                      ? "bg-primary text-on-primary shadow-[0_0_15px_rgba(105,218,255,0.4)]"
                       : "bg-surface-container-highest text-on-surface-variant"
                   )}
                 >
@@ -852,12 +1079,12 @@ export default function App() {
                     General Configuration
                   </h3>
                   <div className="grid gap-4">
-                    <div className="flex items-center justify-between p-4 bg-surface-container rounded-lg">
+                    {/* <div className="flex items-center justify-between p-4 bg-surface-container rounded-lg">
                       <div>
                         <p className="font-bold">Auto-End Sessions</p>
                         <p className="text-xs text-on-surface-variant">Automatically close sessions when timer hits zero</p>
                       </div>
-                      <div 
+                      <div
                         onClick={() => {
                           const newValue = !autoEndSessions;
                           setAutoEndSessions(newValue);
@@ -871,12 +1098,12 @@ export default function App() {
                           autoEndSessions ? "bg-primary" : "bg-surface-container-highest"
                         )}
                       >
-                        <motion.div 
+                        <motion.div
                           animate={{ x: autoEndSessions ? 24 : 4 }}
-                          className="absolute top-1 w-4 h-4 bg-on-primary rounded-full shadow-md" 
+                          className="absolute top-1 w-4 h-4 bg-on-primary rounded-full shadow-md"
                         />
                       </div>
-                    </div>
+                    </div> */}
                   </div>
                 </div>
 
@@ -926,8 +1153,8 @@ export default function App() {
                                 <td className="p-4">
                                   <div className="relative">
                                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-primary/40">LKR</span>
-                                    <input 
-                                      type="number" 
+                                    <input
+                                      type="number"
                                       value={ps5Rates[tier].thirtyMin || ''}
                                       onChange={(e) => {
                                         const val = e.target.value === '' ? 0 : Number(e.target.value);
@@ -941,8 +1168,8 @@ export default function App() {
                                 <td className="p-4">
                                   <div className="relative">
                                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-primary/40">LKR</span>
-                                    <input 
-                                      type="number" 
+                                    <input
+                                      type="number"
                                       value={ps5Rates[tier].hourly || ''}
                                       onChange={(e) => {
                                         const val = e.target.value === '' ? 0 : Number(e.target.value);
@@ -956,8 +1183,8 @@ export default function App() {
                                 <td className="p-4">
                                   <div className="relative">
                                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-primary/40">LKR</span>
-                                    <input 
-                                      type="number" 
+                                    <input
+                                      type="number"
                                       value={ps5Rates[tier].threeHour || ''}
                                       onChange={(e) => {
                                         const val = e.target.value === '' ? 0 : Number(e.target.value);
@@ -971,8 +1198,8 @@ export default function App() {
                                 <td className="p-4">
                                   <div className="relative">
                                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-primary/40">LKR</span>
-                                    <input 
-                                      type="number" 
+                                    <input
+                                      type="number"
                                       value={ps5Rates[tier].fiveHour || ''}
                                       onChange={(e) => {
                                         const val = e.target.value === '' ? 0 : Number(e.target.value);
@@ -1014,8 +1241,8 @@ export default function App() {
                                 <td className="p-4">
                                   <div className="relative">
                                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-secondary/40">LKR</span>
-                                    <input 
-                                      type="number" 
+                                    <input
+                                      type="number"
                                       value={ps4Rates[tier].thirtyMin || ''}
                                       onChange={(e) => {
                                         const val = e.target.value === '' ? 0 : Number(e.target.value);
@@ -1029,8 +1256,8 @@ export default function App() {
                                 <td className="p-4">
                                   <div className="relative">
                                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-secondary/40">LKR</span>
-                                    <input 
-                                      type="number" 
+                                    <input
+                                      type="number"
                                       value={ps4Rates[tier].hourly || ''}
                                       onChange={(e) => {
                                         const val = e.target.value === '' ? 0 : Number(e.target.value);
@@ -1044,8 +1271,8 @@ export default function App() {
                                 <td className="p-4">
                                   <div className="relative">
                                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-secondary/40">LKR</span>
-                                    <input 
-                                      type="number" 
+                                    <input
+                                      type="number"
                                       value={ps4Rates[tier].threeHour || ''}
                                       onChange={(e) => {
                                         const val = e.target.value === '' ? 0 : Number(e.target.value);
@@ -1059,8 +1286,8 @@ export default function App() {
                                 <td className="p-4">
                                   <div className="relative">
                                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-secondary/40">LKR</span>
-                                    <input 
-                                      type="number" 
+                                    <input
+                                      type="number"
                                       value={ps4Rates[tier].fiveHour || ''}
                                       onChange={(e) => {
                                         const val = e.target.value === '' ? 0 : Number(e.target.value);
@@ -1100,8 +1327,8 @@ export default function App() {
                     </div>
                     <div className="p-4 bg-surface-container rounded-lg space-y-1 max-w-xs">
                       <p className="text-[10px] font-bold text-on-surface-variant uppercase">Minimum Session Price (LKR)</p>
-                      <input 
-                        type="number" 
+                      <input
+                        type="number"
                         value={minDurationPrice || ''}
                         onChange={(e) => setMinDurationPrice(e.target.value === '' ? 0 : Number(e.target.value))}
                         disabled={!isAdmin}
@@ -1118,7 +1345,7 @@ export default function App() {
 
       {/* Bottom Navigation (Mobile) */}
       <nav className="md:hidden fixed bottom-0 w-full z-50 h-20 bg-background/90 backdrop-blur-xl flex justify-around items-center px-4 border-t border-primary/10 shadow-[0_-4px_20px_rgba(0,0,0,0.5)]">
-        <button 
+        <button
           onClick={() => setActiveTab('dashboard')}
           className={cn(
             "flex flex-col items-center justify-center px-4 py-1 transition-all active:scale-90",
@@ -1128,7 +1355,7 @@ export default function App() {
           <LayoutDashboard className="w-6 h-6" />
           <span className="font-headline text-[10px] font-bold tracking-[0.05em] uppercase">DASHBOARD</span>
         </button>
-        <button 
+        <button
           onClick={() => setActiveTab('reports')}
           className={cn(
             "flex flex-col items-center justify-center px-4 py-1 transition-all active:scale-90",
@@ -1138,7 +1365,7 @@ export default function App() {
           <BarChart3 className="w-6 h-6" />
           <span className="font-headline text-[10px] font-bold tracking-[0.05em] uppercase">REPORTS</span>
         </button>
-        <button 
+        <button
           onClick={() => setActiveTab('settings')}
           className={cn(
             "flex flex-col items-center justify-center px-4 py-1 transition-all active:scale-90",
@@ -1151,17 +1378,23 @@ export default function App() {
       </nav>
 
       {/* Floating Action Button */}
-      <button className="fixed bottom-24 right-6 md:bottom-8 md:right-8 w-14 h-14 bg-primary text-on-primary rounded-xl shadow-[0_0_20px_rgba(105,218,255,0.5)] flex items-center justify-center active:scale-90 transition-transform z-40">
-        <Plus className="w-8 h-8" />
-      </button>
+      {isAdmin && (
+        <button
+          type="button"
+          onClick={() => setShowAddStation(true)}
+          className="fixed bottom-24 right-6 md:bottom-8 md:right-8 w-14 h-14 bg-primary text-on-primary rounded-xl shadow-[0_0_20px_rgba(105,218,255,0.5)] flex items-center justify-center active:scale-90 transition-transform z-40"
+        >
+          <Plus className="w-8 h-8" />
+        </button>
+      )}
 
       {/* Session Setup Modal */}
       <AnimatePresence>
         {setupStation && (
-          <SessionSetupModal 
-            station={setupStation} 
+          <SessionSetupModal
+            station={setupStation}
             minPrice={minDurationPrice}
-            onClose={() => setSetupStation(null)} 
+            onClose={() => setSetupStation(null)}
             onStartTimer={(players, startTime, endTime) => {
               setConfirmSessionData({ stationId: setupStation.id, players, startTime, endTime });
               setSetupStation(null);
@@ -1177,6 +1410,21 @@ export default function App() {
           />
         )}
 
+        {extendStation && (
+          <ExtendSessionModal
+            station={extendStation}
+            onClose={() => setExtendStation(null)}
+            onConfirm={(minutes) => handleExtendSession(extendStation, minutes)}
+          />
+        )}
+
+        {showAddStation && (
+          <AddStationModal
+            onClose={() => setShowAddStation(false)}
+            onConfirm={handleAddStation}
+          />
+        )}
+
         {confirmSessionData && (
           <StartSessionConfirmationModal
             stationId={confirmSessionData.stationId}
@@ -1184,10 +1432,22 @@ export default function App() {
             onConfirm={async () => {
               const { stationId, players, startTime, endTime } = confirmSessionData;
               try {
-                await startSession(stationId, players, startTime, endTime);
-                // Refresh from server so we get the authoritative session state
-                const updated = await fetchStations();
-                setStations(updated);
+                const data = await startSession(stationId, players, startTime, endTime);
+                setStations(prev => prev.map(s => {
+                  if (s.id !== stationId) return s;
+                  const rem = data.durationSeconds;
+                  const h = String(Math.floor(rem / 3600)).padStart(2, '0');
+                  const m = String(Math.floor((rem % 3600) / 60)).padStart(2, '0');
+                  const sec = String(rem % 60).padStart(2, '0');
+                  return {
+                    ...s,
+                    status: 'busy' as const,
+                    players: data.players,
+                    totalSeconds: rem,
+                    remainingSeconds: rem,
+                    remainingTime: `${h}:${m}:${sec}`,
+                  };
+                }));
               } catch (err) {
                 console.error('Failed to start session:', err);
                 alert('Failed to start session. Please try again.');
@@ -1196,6 +1456,67 @@ export default function App() {
             }}
           />
         )}
+
+        {/* Export Range Modal */}
+        <AnimatePresence>
+          {showExportModal && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+              onClick={() => setShowExportModal(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                onClick={(e) => e.stopPropagation()}
+                className="glass-card rounded-2xl border border-white/10 p-6 w-full max-w-sm shadow-[0_0_40px_rgba(105,218,255,0.08)]"
+              >
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h2 className="font-headline font-bold text-lg uppercase tracking-wider">Export Report</h2>
+                    <p className="text-xs text-on-surface-variant font-label tracking-widest uppercase mt-0.5">Select date range</p>
+                  </div>
+                  <button onClick={() => setShowExportModal(false)} className="text-on-surface-variant hover:text-on-surface transition-colors">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-headline font-bold text-on-surface-variant tracking-[0.2em] uppercase mb-1.5">From</label>
+                    <input
+                      type="date"
+                      value={exportFrom}
+                      onChange={(e) => setExportFrom(e.target.value)}
+                      className="w-full bg-surface-container border border-white/10 rounded-lg px-4 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30 transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-headline font-bold text-on-surface-variant tracking-[0.2em] uppercase mb-1.5">To</label>
+                    <input
+                      type="date"
+                      value={exportTo}
+                      onChange={(e) => setExportTo(e.target.value)}
+                      className="w-full bg-surface-container border border-white/10 rounded-lg px-4 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30 transition-colors"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleExportRange}
+                  disabled={exporting || !exportFrom || !exportTo}
+                  className="w-full mt-6 flex items-center justify-center gap-2 bg-primary text-on-primary font-headline font-bold text-sm tracking-widest uppercase py-3 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
+                >
+                  <Download className="w-4 h-4" />
+                  {exporting ? 'Exporting...' : 'Download CSV'}
+                </button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <AdminPinModal
           isOpen={showPinModal}
@@ -1248,10 +1569,10 @@ const AdminPinModal: React.FC<{
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ 
-          opacity: 1, 
+        animate={{
+          opacity: 1,
           scale: 1,
           x: error ? [-10, 10, -10, 10, 0] : 0
         }}
@@ -1266,9 +1587,9 @@ const AdminPinModal: React.FC<{
             <h3 className="font-headline text-xl font-bold text-on-surface uppercase">Admin Access</h3>
             <p className="text-xs text-on-surface-variant uppercase tracking-widest mt-1">Enter Security PIN to continue</p>
           </div>
-          
+
           <form onSubmit={handleSubmit} className="w-full space-y-4 mt-4">
-            <input 
+            <input
               type="password"
               autoFocus
               value={pin}
@@ -1281,9 +1602,9 @@ const AdminPinModal: React.FC<{
               )}
             />
             {error && <p className="text-error text-[10px] font-bold uppercase tracking-widest">Invalid PIN. Access Denied.</p>}
-            
+
             <div className="flex gap-3">
-              <button 
+              <button
                 type="button"
                 onClick={onClose}
                 className="flex-1 px-4 py-3 rounded-xl font-headline font-bold text-xs uppercase text-on-surface-variant hover:bg-white/5 transition-colors"
@@ -1309,26 +1630,29 @@ interface StationCardProps {
   station: Station;
   onStart: () => void;
   onEnd: () => void;
+  onExtend: () => void;
   onTerminate: () => void;
   onCollect: () => void;
   onPrint: () => void;
+  onDelete?: () => void;
+  isAdmin?: boolean;
 }
 
-const StationCard: React.FC<StationCardProps> = ({ station, onStart, onEnd, onTerminate, onCollect, onPrint }) => {
+const StationCard: React.FC<StationCardProps> = ({ station, onStart, onEnd, onExtend, onTerminate, onCollect, onPrint, onDelete, isAdmin }) => {
   const isPS5 = station.type === 'PS5';
   const isBusy = station.status === 'busy';
   const isCompleted = station.status === 'completed';
 
-  const progress = isBusy && station.totalSeconds && station.remainingSeconds 
-    ? (station.remainingSeconds / station.totalSeconds) * 100 
+  const progress = isBusy && station.totalSeconds && station.remainingSeconds
+    ? (station.remainingSeconds / station.totalSeconds) * 100
     : 0;
 
   return (
-    <motion.div 
+    <motion.div
       layout
       initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ 
-        opacity: 1, 
+      animate={{
+        opacity: 1,
         scale: 1,
         backgroundColor: isCompleted ? ['#1a1a1a', '#451a1a', '#1a1a1a'] : '#1a1a1a'
       }}
@@ -1377,7 +1701,7 @@ const StationCard: React.FC<StationCardProps> = ({ station, onStart, onEnd, onTe
             </span>
           </div>
         </div>
-        
+
         <div className={cn("text-right", (!isBusy && !isCompleted) && "opacity-30")}>
           <p className="font-headline text-[10px] text-on-surface-variant uppercase tracking-widest mb-1">
             {isCompleted ? 'Total Amount' : 'Remaining'}
@@ -1399,14 +1723,14 @@ const StationCard: React.FC<StationCardProps> = ({ station, onStart, onEnd, onTe
               <span className="text-sm font-bold text-on-surface">{station.user}</span>
             </div>
             <div className="flex gap-2">
-              <button 
+              <button
                 onClick={onPrint}
                 className="bg-surface-container-highest hover:bg-white/10 text-on-surface px-4 py-3 rounded-xl font-headline text-xs font-bold tracking-widest uppercase transition-all active:scale-95 border border-white/10 flex items-center gap-2"
                 title="Print Receipt"
               >
                 <Printer className="w-4 h-4" />
               </button>
-              <button 
+              <button
                 onClick={onCollect}
                 className="bg-primary hover:bg-primary/80 text-on-primary px-6 py-3 rounded-xl font-headline text-xs font-bold tracking-widest uppercase transition-all active:scale-95 shadow-[0_0_15px_rgba(105,218,255,0.4)]"
               >
@@ -1421,13 +1745,23 @@ const StationCard: React.FC<StationCardProps> = ({ station, onStart, onEnd, onTe
               <span className="text-sm font-bold text-on-surface">{station.user}</span>
             </div>
             <div className="flex gap-2">
-              <button 
+              <button
                 onClick={onTerminate}
                 className="bg-error/10 hover:bg-error/20 text-error px-4 py-3 rounded-xl font-headline text-[10px] font-bold tracking-widest uppercase transition-all active:scale-95 border border-error/20"
               >
                 Terminate
               </button>
-              <button 
+              <button
+                onClick={onExtend}
+                className={cn(
+                  "px-4 py-3 rounded-xl font-headline text-xs font-bold tracking-widest uppercase transition-all active:scale-95 border flex items-center gap-1",
+                  isPS5 ? "border-primary/30 text-primary hover:bg-primary/10" : "border-secondary/30 text-secondary hover:bg-secondary/10"
+                )}
+              >
+                <Plus className="w-3 h-3" />
+                Extend
+              </button>
+              <button
                 onClick={onEnd}
                 className="bg-error/20 hover:bg-error/30 text-error px-6 py-3 rounded-xl font-headline text-xs font-bold tracking-widest uppercase transition-all active:scale-95"
               >
@@ -1436,29 +1770,243 @@ const StationCard: React.FC<StationCardProps> = ({ station, onStart, onEnd, onTe
             </div>
           </>
         ) : (
-          <div className="w-full flex justify-end">
-            <button 
-              onClick={onStart}
-              className={cn(
-                "px-8 py-3 rounded-xl font-headline text-xs font-bold tracking-widest uppercase transition-all active:scale-95",
-                isPS5 ? "bg-primary text-on-primary hover:shadow-[0_0_15px_rgba(105,218,255,0.4)]" : "bg-secondary text-on-secondary hover:shadow-[0_0_15px_rgba(129,151,255,0.4)]"
-              )}
-            >
-              Start Session
-            </button>
+          <div className="w-full flex justify-between items-center">
+            {isAdmin && onDelete && (
+              <button
+                type="button"
+                onClick={onDelete}
+                className="p-2 rounded-lg text-on-surface-variant hover:text-error hover:bg-error/10 transition-all"
+                title="Remove station"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+            <div className={isAdmin && onDelete ? '' : 'ml-auto'}>
+              <button
+                type="button"
+                onClick={onStart}
+                className={cn(
+                  "px-8 py-3 rounded-xl font-headline text-xs font-bold tracking-widest uppercase transition-all active:scale-95",
+                  isPS5 ? "bg-primary text-on-primary hover:shadow-[0_0_15px_rgba(105,218,255,0.4)]" : "bg-secondary text-on-secondary hover:shadow-[0_0_15px_rgba(129,151,255,0.4)]"
+                )}
+              >
+                Start Session
+              </button>
+            </div>
           </div>
         )}
       </div>
 
       {isBusy && (
         <div className="absolute bottom-0 left-0 w-full h-1 bg-surface-container">
-          <motion.div 
+          <motion.div
             initial={{ width: '100%' }}
             animate={{ width: `${progress}%` }}
-            className={cn("h-full", isPS5 ? "bg-primary" : "bg-secondary")} 
+            className={cn("h-full", isPS5 ? "bg-primary" : "bg-secondary")}
           />
         </div>
       )}
+    </motion.div>
+  );
+}
+
+function AddStationModal({ onClose, onConfirm }: {
+  onClose: () => void;
+  onConfirm: (id: string, type: string, pricingTemplate: 'PS5' | 'PS4') => void;
+}) {
+  const [stationId, setStationId] = useState('');
+  const [stationType, setStationType] = useState('PS5');
+  const [customType, setCustomType] = useState('');
+  const [pricingTemplate, setPricingTemplate] = useState<'PS5' | 'PS4'>('PS5');
+  const [error, setError] = useState('');
+
+  const presetTypes = ['PS5', 'PS4', 'PC'];
+  const finalType = stationType === 'CUSTOM' ? customType.toUpperCase() : stationType;
+
+  const handleSubmit = () => {
+    if (!stationId.trim()) { setError('Station ID is required'); return; }
+    if (!/^[A-Za-z0-9_\-]{2,20}$/.test(stationId.trim())) { setError('ID: 2–20 chars, letters/numbers/dash/underscore only'); return; }
+    if (stationType === 'CUSTOM' && !customType.trim()) { setError('Enter a custom type name'); return; }
+    setError('');
+    onConfirm(stationId.trim(), finalType, pricingTemplate);
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-background/90 backdrop-blur-md"
+    >
+      <motion.div
+        initial={{ scale: 0.9, y: 20 }}
+        animate={{ scale: 1, y: 0 }}
+        exit={{ scale: 0.9, y: 20 }}
+        className="w-full max-w-md bg-surface-container-low rounded-xl shadow-2xl border border-white/10 p-8"
+      >
+        <div className="w-14 h-14 bg-primary/20 rounded-full flex items-center justify-center mx-auto mb-6">
+          <Plus className="w-7 h-7 text-primary" />
+        </div>
+        <h2 className="font-headline text-2xl font-bold text-on-surface uppercase text-center mb-1">Add Station</h2>
+        <p className="text-on-surface-variant text-sm text-center mb-8">Register a new console or PC to the network</p>
+
+        <div className="space-y-6">
+          {/* Station ID */}
+          <div>
+            <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2">Station ID</p>
+            <input
+              type="text"
+              value={stationId}
+              onChange={e => setStationId(e.target.value.toUpperCase())}
+              placeholder="e.g. PS5-05, PC-01"
+              className="w-full bg-surface-container-high border-2 border-white/5 focus:border-primary rounded-xl py-3 px-4 font-headline text-lg font-bold uppercase tracking-widest focus:outline-none transition-all"
+            />
+          </div>
+
+          {/* Station Type */}
+          <div>
+            <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2">Station Type</p>
+            <div className="grid grid-cols-4 gap-2">
+              {[...presetTypes, 'CUSTOM'].map(t => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setStationType(t)}
+                  className={cn(
+                    'py-3 rounded-xl border font-headline text-xs font-bold uppercase transition-all',
+                    stationType === t
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-transparent bg-surface-container-high text-on-surface-variant hover:bg-surface-bright'
+                  )}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+            {stationType === 'CUSTOM' && (
+              <input
+                type="text"
+                value={customType}
+                onChange={e => setCustomType(e.target.value)}
+                placeholder="e.g. XBOX, VR"
+                className="mt-2 w-full bg-surface-container-high border-2 border-primary/30 rounded-xl py-2 px-4 font-headline text-sm font-bold uppercase tracking-widest focus:outline-none focus:border-primary transition-all"
+              />
+            )}
+          </div>
+
+          {/* Pricing Template */}
+          <div>
+            <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2">Base Pricing Template</p>
+            <div className="grid grid-cols-2 gap-2">
+              {(['PS5', 'PS4'] as const).map(t => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setPricingTemplate(t)}
+                  className={cn(
+                    'py-3 rounded-xl border font-headline text-xs font-bold uppercase transition-all',
+                    pricingTemplate === t
+                      ? t === 'PS5' ? 'border-primary bg-primary/10 text-primary' : 'border-secondary bg-secondary/10 text-secondary'
+                      : 'border-transparent bg-surface-container-high text-on-surface-variant hover:bg-surface-bright'
+                  )}
+                >
+                  {t} Rates
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-on-surface-variant mt-1">Pricing can be adjusted later in Settings</p>
+          </div>
+
+          {error && <p className="text-error text-[10px] font-bold uppercase tracking-widest">{error}</p>}
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-3 rounded-xl bg-surface-container-highest font-headline font-bold text-xs text-on-surface uppercase hover:bg-surface-bright transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              className="flex-[2] py-3 rounded-xl bg-primary text-on-primary font-headline font-bold text-xs uppercase shadow-[0_0_15px_rgba(105,218,255,0.3)] hover:shadow-[0_0_25px_rgba(105,218,255,0.5)] transition-all active:scale-95"
+            >
+              Add Station
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function ExtendSessionModal({ station, onClose, onConfirm }: { station: Station; onClose: () => void; onConfirm: (minutes: number) => void }) {
+  const [selected, setSelected] = useState(30);
+  const isPS5 = station.type === 'PS5';
+
+  const options = [15, 30, 60, 90, 120];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-background/90 backdrop-blur-md"
+    >
+      <motion.div
+        initial={{ scale: 0.9, y: 20 }}
+        animate={{ scale: 1, y: 0 }}
+        exit={{ scale: 0.9, y: 20 }}
+        className="w-full max-w-sm bg-surface-container-low rounded-xl shadow-2xl border border-white/10 p-8"
+      >
+        <div className={cn("w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-6", isPS5 ? "bg-primary/20" : "bg-secondary/20")}>
+          <Plus className={cn("w-7 h-7", isPS5 ? "text-primary" : "text-secondary")} />
+        </div>
+        <h2 className="font-headline text-2xl font-bold text-on-surface uppercase text-center mb-1">Extend Session</h2>
+        <p className="text-on-surface-variant text-sm text-center mb-8">
+          Add time to <span className="text-on-surface font-bold">{station.id}</span>
+        </p>
+
+        <div className="grid grid-cols-5 gap-2 mb-8">
+          {options.map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setSelected(m)}
+              className={cn(
+                'flex flex-col items-center justify-center py-3 rounded-xl border transition-all',
+                selected === m
+                  ? isPS5 ? 'border-primary bg-primary/10 text-primary' : 'border-secondary bg-secondary/10 text-secondary'
+                  : 'border-transparent bg-surface-container-high text-on-surface-variant hover:bg-surface-bright'
+              )}
+            >
+              <span className="font-headline text-lg font-bold leading-none">{m}</span>
+              <span className="font-label text-[9px] uppercase tracking-tight mt-0.5">min</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 py-3 rounded-xl bg-surface-container-highest font-headline font-bold text-xs text-on-surface uppercase hover:bg-surface-bright transition-all"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => onConfirm(selected)}
+            className={cn(
+              "flex-[2] py-3 rounded-xl font-headline font-bold text-xs uppercase transition-all active:scale-95",
+              isPS5 ? "bg-primary text-on-primary shadow-[0_0_15px_rgba(105,218,255,0.3)]" : "bg-secondary text-on-secondary shadow-[0_0_15px_rgba(129,151,255,0.3)]"
+            )}
+          >
+            + {selected} Minutes
+          </button>
+        </div>
+      </motion.div>
     </motion.div>
   );
 }
@@ -1484,13 +2032,13 @@ function TerminateSessionModal({ stationId, onClose, onConfirm }: { stationId: s
   };
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-background/90 backdrop-blur-md"
     >
-      <motion.div 
+      <motion.div
         initial={{ scale: 0.9, y: 20 }}
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.9, y: 20 }}
@@ -1499,7 +2047,7 @@ function TerminateSessionModal({ stationId, onClose, onConfirm }: { stationId: s
         <div className="w-16 h-16 bg-error/20 rounded-full flex items-center justify-center mx-auto mb-6">
           <X className="w-8 h-8 text-error" />
         </div>
-        
+
         <h2 className="font-headline text-2xl font-bold text-on-surface uppercase mb-2">Terminate Session</h2>
         <p className="text-on-surface-variant text-sm mb-8">
           Are you sure you want to terminate the session for <span className="text-on-surface font-bold">{stationId}</span>? No revenue will be added.
@@ -1508,7 +2056,7 @@ function TerminateSessionModal({ stationId, onClose, onConfirm }: { stationId: s
         <div className="space-y-6">
           <div className="text-left">
             <label className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2 block">Reason for Termination</label>
-            <textarea 
+            <textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               autoFocus
@@ -1522,13 +2070,13 @@ function TerminateSessionModal({ stationId, onClose, onConfirm }: { stationId: s
           </div>
 
           <div className="flex gap-4">
-            <button 
+            <button
               onClick={onClose}
               className="flex-1 py-4 px-6 rounded-xl bg-surface-container-highest font-headline font-bold text-on-surface hover:bg-surface-bright transition-all uppercase"
             >
               CANCEL
             </button>
-            <button 
+            <button
               onClick={handleConfirm}
               className="flex-[2] py-4 px-6 rounded-xl bg-error text-on-primary font-headline font-bold shadow-[0_0_20px_rgba(255,82,82,0.3)] hover:shadow-[0_0_30px_rgba(255,82,82,0.5)] transition-all active:scale-95 uppercase"
             >
@@ -1555,13 +2103,13 @@ function StartSessionConfirmationModal({ stationId, onClose, onConfirm }: { stat
   };
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-background/90 backdrop-blur-md"
     >
-      <motion.div 
+      <motion.div
         initial={{ scale: 0.9, y: 20 }}
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.9, y: 20 }}
@@ -1570,14 +2118,14 @@ function StartSessionConfirmationModal({ stationId, onClose, onConfirm }: { stat
         <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center mx-auto mb-6">
           <Lock className="w-8 h-8 text-primary" />
         </div>
-        
+
         <h2 className="font-headline text-2xl font-bold text-on-surface uppercase mb-2">Confirm Session</h2>
         <p className="text-on-surface-variant text-sm mb-8">
           Type <span className="text-primary font-bold">"yes"</span> to authorize session start for <span className="text-on-surface font-bold">{stationId}</span>
         </p>
 
         <div className="space-y-6">
-          <input 
+          <input
             type="text"
             value={passcode}
             onChange={(e) => setPasscode(e.target.value)}
@@ -1591,13 +2139,13 @@ function StartSessionConfirmationModal({ stationId, onClose, onConfirm }: { stat
           />
 
           <div className="flex gap-4">
-            <button 
+            <button
               onClick={onClose}
               className="flex-1 py-4 px-6 rounded-xl bg-surface-container-highest font-headline font-bold text-on-surface hover:bg-surface-bright transition-all uppercase"
             >
               CANCEL
             </button>
-            <button 
+            <button
               onClick={handleConfirm}
               className="flex-[2] py-4 px-6 rounded-xl bg-primary text-on-primary font-headline font-bold shadow-[0_0_20px_rgba(105,218,255,0.3)] hover:shadow-[0_0_30px_rgba(105,218,255,0.5)] transition-all active:scale-95 uppercase"
             >
@@ -1648,13 +2196,13 @@ function SessionSetupModal({ station, minPrice, onClose, onStartTimer }: Session
   }
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm"
     >
-      <motion.div 
+      <motion.div
         initial={{ scale: 0.9, y: 20 }}
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.9, y: 20 }}
@@ -1689,13 +2237,13 @@ function SessionSetupModal({ station, minPrice, onClose, onStartTimer }: Session
             </div>
             <div className="grid grid-cols-4 gap-4">
               {[1, 2, 3, 4].map((n) => (
-                <button 
+                <button
                   key={n}
                   onClick={() => setPlayerCount(n)}
                   className={cn(
                     "flex flex-col items-center justify-center p-4 rounded-xl transition-all border",
-                    playerCount === n 
-                      ? "border-primary bg-primary/10 shadow-[0_0_15px_rgba(105,218,255,0.2)]" 
+                    playerCount === n
+                      ? "border-primary bg-primary/10 shadow-[0_0_15px_rgba(105,218,255,0.2)]"
                       : "bg-surface-container-high hover:bg-surface-bright border-transparent"
                   )}
                 >
@@ -1819,13 +2367,13 @@ function SessionSetupModal({ station, minPrice, onClose, onStartTimer }: Session
 
           {/* Actions */}
           <div className="flex gap-4 pt-4">
-            <button 
+            <button
               onClick={onClose}
               className="flex-1 py-4 px-6 rounded-xl bg-surface-container-highest font-headline font-bold text-on-surface hover:bg-surface-bright transition-all active:scale-95 uppercase"
             >
               CANCEL
             </button>
-            <button 
+            <button
               onClick={() => { if (duration > 0) { const { startTime, endTime } = getTimePair(); onStartTimer(playerCount, startTime, endTime); } }}
               className="flex-[2] py-4 px-6 rounded-xl bg-gradient-to-br from-primary to-primary-container font-headline font-bold text-on-primary shadow-[0_0_20px_rgba(105,218,255,0.3)] hover:shadow-[0_0_30px_rgba(105,218,255,0.5)] transition-all active:scale-95 flex items-center justify-center gap-3 uppercase"
             >

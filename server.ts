@@ -25,6 +25,7 @@ import stationRoutes  from './routes/stations.js';
 import pricingRoutes  from './routes/pricing.js';
 import logsRoutes     from './routes/logs.js';
 import settingsRoutes from './routes/settings.js';
+import authRoutes     from './routes/auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -48,9 +49,18 @@ async function startServer(): Promise<void> {
   // -------------------------------------------------------------------------
   // 3. API Routes
   // -------------------------------------------------------------------------
+  // Disable caching for all API routes
+  app.use('/api', (_req, res, next) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    next();
+  });
+
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
+
+  app.use('/api/auth', authRoutes);
 
   app.use('/api/stations', stationRoutes);
   app.use('/api/pricing',  pricingRoutes);

@@ -23,13 +23,14 @@ const router = Router();
 interface SessionRow {
   id:                   string;
   station_id:           string;
-  station_type:         'PS5' | 'PS4';
+  station_type:         string;
   players:              number;
   duration_label:       string;
   revenue:              number;
   status:               'completed' | 'in-progress' | 'terminated';
   termination_reason:   string | null;
   started_at:           string;
+  ended_at:             string | null;
   actual_seconds_played: number | null;
 }
 
@@ -37,14 +38,35 @@ interface SessionRow {
 // Helpers
 // ---------------------------------------------------------------------------
 
+function toHHMM(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function formatPlayTime(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0 && m > 0) return `${h}h ${m}m`;
+  if (h > 0) return `${h}h`;
+  return `${m}m`;
+}
+
 function toSessionLog(row: SessionRow) {
+  let actualDuration = row.duration_label;
+  if (row.ended_at) {
+    const playSeconds = row.actual_seconds_played != null
+      ? row.actual_seconds_played
+      : Math.max(0, Math.floor((new Date(row.ended_at).getTime() - new Date(row.started_at).getTime()) / 1000));
+    actualDuration = `${toHHMM(row.started_at)} - ${toHHMM(row.ended_at)} (${formatPlayTime(playSeconds)})`;
+  }
+
   return {
     id:                row.id,
     machineId:         `${row.station_id} (${row.station_type})`,
     type:              row.station_type,
     status:            row.status,
     players:           row.players,
-    duration:          row.duration_label,
+    duration:          actualDuration,
     revenue:           row.revenue,
     date:              row.started_at.split('T')[0],
     terminationReason: row.termination_reason ?? undefined,
@@ -83,6 +105,7 @@ router.get('/', async (req: Request, res: Response) => {
          ses.status,
          ses.termination_reason,
          ses.started_at,
+         ses.ended_at,
          ses.actual_seconds_played
        FROM sessions ses
        JOIN stations s ON s.id = ses.station_id
@@ -95,6 +118,52 @@ router.get('/', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('[GET /api/logs]', err);
     res.status(500).json({ error: 'Failed to fetch session logs' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/logs/range?from=YYYY-MM-DD&to=YYYY-MM-DD
+// ---------------------------------------------------------------------------
+router.get('/range', async (req: Request, res: Response) => {
+  const from = validateDate(req.query['from']);
+  const to   = validateDate(req.query['to']);
+  if (!from || !to) {
+    res.status(400).json({ error: 'from and to query params are required in YYYY-MM-DD format' });
+    return;
+  }
+  if (from > to) {
+    res.status(400).json({ error: 'from date must be on or before to date' });
+    return;
+  }
+
+  try {
+    const db = await getDb();
+    const rows = await db.all<SessionRow[]>(
+      `SELECT
+         ses.id,
+         ses.station_id,
+         s.type  AS station_type,
+         ses.players,
+         ses.duration_label,
+         ses.revenue,
+         ses.status,
+         ses.termination_reason,
+         ses.started_at,
+         ses.ended_at,
+         ses.actual_seconds_played
+       FROM sessions ses
+       JOIN stations s ON s.id = ses.station_id
+       WHERE date(ses.started_at) BETWEEN ? AND ?
+       ORDER BY ses.started_at ASC`,
+      from, to
+    );
+
+    const logs        = rows.map(toSessionLog);
+    const totalRevenue = logs.reduce((sum, l) => sum + l.revenue, 0);
+    res.json({ data: logs, totalRevenue, from, to });
+  } catch (err) {
+    console.error('[GET /api/logs/range]', err);
+    res.status(500).json({ error: 'Failed to fetch logs' });
   }
 });
 

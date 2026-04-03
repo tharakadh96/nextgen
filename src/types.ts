@@ -1,4 +1,4 @@
-export type StationType = 'PS5' | 'PS4';
+export type StationType = string;
 
 export interface Station {
   id: string;
