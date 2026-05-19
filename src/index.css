@@ -1,74 +1,125 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Manrope:wght@300;400;500;600;700&display=swap');
 
 @theme {
   --font-headline: "Space Grotesk", sans-serif;
   --font-body: "Manrope", sans-serif;
   --font-label: "Space Grotesk", sans-serif;
 
+  /* ── Surface hierarchy ── */
   --color-background: #0c0e17;
   --color-surface: #0c0e17;
+  --color-surface-container-lowest: #000000;
   --color-surface-container-low: #11131d;
   --color-surface-container: #171924;
   --color-surface-container-high: #1c1f2b;
   --color-surface-container-highest: #222532;
   --color-surface-bright: #282b3a;
 
+  /* ── PS5 Cyan ── */
   --color-primary: #69daff;
   --color-primary-container: #00cffc;
   --color-on-primary: #004a5d;
   --color-primary-dim: #00c0ea;
 
+  /* ── PS4 Purple-Blue ── */
   --color-secondary: #8197ff;
   --color-secondary-container: #124af0;
   --color-on-secondary: #001661;
   --color-secondary-dim: #3e65ff;
 
+  /* ── Tertiary ── */
   --color-tertiary: #89a5ff;
   --color-tertiary-container: #7696fd;
   --color-on-tertiary: #00236d;
+  --color-tertiary-dim: #7999ff;
 
+  /* ── Error ── */
   --color-error: #ff716c;
   --color-error-dim: #d7383b;
   --color-on-error: #490006;
 
+  /* ── Text ── */
   --color-on-surface: #f0f0fd;
   --color-on-surface-variant: #aaaab7;
+
+  /* ── Borders ── */
   --color-outline: #737580;
   --color-outline-variant: #464752;
 }
 
 @layer base {
   body {
-    @apply bg-background text-on-surface font-body selection:bg-primary/30;
+    @apply bg-background text-on-surface font-body selection:bg-primary/30 antialiased;
+    min-height: max(884px, 100dvh);
   }
 
-  /* Hide number input spinners */
+  button { -webkit-tap-highlight-color: transparent; }
+
   input::-webkit-outer-spin-button,
   input::-webkit-inner-spin-button {
     -webkit-appearance: none;
     margin: 0;
   }
-
-  input[type=number] {
-    -moz-appearance: textfield;
-  }
+  input[type=number] { -moz-appearance: textfield; }
 }
 
 @layer components {
+  /* Glass card for modals/panels */
   .glass-card {
-    @apply bg-surface-container-high/70 backdrop-blur-xl border border-white/5;
+    background: rgba(28, 31, 43, 0.7);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.05);
   }
+
+  /* PS5 card glow */
   .next-gen-glow {
-    @apply shadow-[0_0_15px_rgba(105,218,255,0.15)];
+    box-shadow: 0 0 15px rgba(105, 218, 255, 0.15);
   }
+
+  /* PS4 card glow */
   .classic-glow {
-    @apply shadow-[0_0_15px_rgba(129,151,255,0.1)];
+    box-shadow: 0 0 15px rgba(129, 151, 255, 0.1);
   }
-  .hud-line {
-    background: linear-gradient(90deg, transparent, rgba(105, 218, 255, 0.3), transparent);
-    height: 1px;
-    width: 100%;
+
+  /* Primary button */
+  .btn-primary {
+    background: #69daff;
+    color: #004a5d;
+    font-family: "Space Grotesk", sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    transition: box-shadow 0.2s, transform 0.1s;
+  }
+  .btn-primary:hover  { box-shadow: 0 0 15px rgba(105, 218, 255, 0.4); }
+  .btn-primary:active { transform: scale(0.96); }
+
+  /* Secondary button */
+  .btn-secondary {
+    background: #8197ff;
+    color: #001661;
+    font-family: "Space Grotesk", sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    transition: box-shadow 0.2s, transform 0.1s;
+  }
+  .btn-secondary:hover  { box-shadow: 0 0 15px rgba(129, 151, 255, 0.4); }
+  .btn-secondary:active { transform: scale(0.96); }
+
+  .glow-active { box-shadow: 0 0 10px rgba(105, 218, 255, 0.3); }
+
+  /* Utility for settings/reports labels */
+  .industrial-header {
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 700;
+    font-family: "Space Grotesk", sans-serif;
+  }
+
+  /* Panel used in reports/settings */
+  .etched-panel {
+    background: rgba(17, 19, 29, 0.9);
+    border: 1px solid rgba(70, 71, 82, 0.4);
   }
 }
-

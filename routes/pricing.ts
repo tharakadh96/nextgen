@@ -3,13 +3,6 @@
  *
  * GET /api/pricing         — returns full pricing matrix (public)
  * PUT /api/pricing         — update pricing (admin only)
- *
- * Pricing is returned in the same nested shape the frontend uses:
- * {
- *   ps5Rates: { single: { hourly, thirtyMin, threeHour, fiveHour }, … },
- *   ps4Rates: { … },
- *   minDurationPrice: number
- * }
  */
 
 import { Router, type Request, type Response } from 'express';
@@ -74,15 +67,22 @@ router.get('/', async (_req: Request, res: Response) => {
     const db   = await getDb();
     const rows = await db.all<PricingRow[]>('SELECT * FROM pricing ORDER BY platform, player_tier');
 
-    const minPriceSetting = await db.get<{ value: string }>(
-      `SELECT value FROM settings WHERE key = 'min_duration_price'`
+    const slotRows = await db.all<{ platform: string; player_tier: string; duration_minutes: number; price: number }[]>(
+      'SELECT platform, player_tier, duration_minutes, price FROM pricing_slots ORDER BY platform, player_tier, duration_minutes'
     );
+
+    const slots: Record<string, Record<string, Record<number, number>>> = {};
+    for (const s of slotRows) {
+      if (!slots[s.platform]) slots[s.platform] = {};
+      if (!slots[s.platform][s.player_tier]) slots[s.platform][s.player_tier] = {};
+      slots[s.platform][s.player_tier][s.duration_minutes] = s.price;
+    }
 
     res.json({
       data: {
-        ps5Rates:        rowsToPlatformRates(rows, 'PS5'),
-        ps4Rates:        rowsToPlatformRates(rows, 'PS4'),
-        minDurationPrice: minPriceSetting ? parseInt(minPriceSetting.value, 10) : 30,
+        ps5Rates: rowsToPlatformRates(rows, 'PS5'),
+        ps4Rates: rowsToPlatformRates(rows, 'PS4'),
+        slots,
       },
     });
   } catch (err) {
@@ -93,13 +93,12 @@ router.get('/', async (_req: Request, res: Response) => {
 
 // ---------------------------------------------------------------------------
 // PUT /api/pricing  (admin only)
-// Body: { ps5Rates: PlatformRates, ps4Rates: PlatformRates, minDurationPrice?: number }
+// Body: { ps5Rates: PlatformRates, ps4Rates: PlatformRates }
 // ---------------------------------------------------------------------------
 router.put('/', requireAdmin, async (req: Request, res: Response) => {
-  const { ps5Rates, ps4Rates, minDurationPrice } = req.body as {
-    ps5Rates:         PlatformRates;
-    ps4Rates:         PlatformRates;
-    minDurationPrice?: number;
+  const { ps5Rates, ps4Rates } = req.body as {
+    ps5Rates: PlatformRates;
+    ps4Rates: PlatformRates;
   };
 
   // Validate structure
@@ -117,7 +116,7 @@ router.put('/', requireAdmin, async (req: Request, res: Response) => {
         return;
       }
       for (const field of RATE_FIELDS) {
-        const val = (rates[tier] as Record<string, unknown>)[field];
+        const val = (rates[tier] as unknown as Record<string, unknown>)[field];
         if (typeof val !== 'number' || val < 0 || !Number.isInteger(val)) {
           res.status(400).json({
             error: `${label}.${tier}.${field} must be a non-negative integer`,
@@ -125,13 +124,6 @@ router.put('/', requireAdmin, async (req: Request, res: Response) => {
           return;
         }
       }
-    }
-  }
-
-  if (minDurationPrice !== undefined) {
-    if (typeof minDurationPrice !== 'number' || minDurationPrice < 0 || !Number.isInteger(minDurationPrice)) {
-      res.status(400).json({ error: 'minDurationPrice must be a non-negative integer' });
-      return;
     }
   }
 
@@ -165,13 +157,6 @@ router.put('/', requireAdmin, async (req: Request, res: Response) => {
 
       await update.finalize();
 
-      if (minDurationPrice !== undefined) {
-        await db.run(
-          `UPDATE settings SET value = ? WHERE key = 'min_duration_price'`,
-          String(minDurationPrice)
-        );
-      }
-
       await db.run('COMMIT');
     } catch (txErr) {
       await db.run('ROLLBACK');
@@ -182,6 +167,49 @@ router.put('/', requireAdmin, async (req: Request, res: Response) => {
   } catch (err) {
     console.error('[PUT /api/pricing]', err);
     res.status(500).json({ error: 'Failed to update pricing' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PUT /api/pricing/slots  (admin only)
+// ---------------------------------------------------------------------------
+router.put('/slots', requireAdmin, async (req: Request, res: Response) => {
+  const { slots } = req.body as {
+    slots: Record<string, Record<string, Record<number, number>>>;
+  };
+
+  if (!slots || typeof slots !== 'object') {
+    res.status(400).json({ error: 'slots object is required' });
+    return;
+  }
+
+  try {
+    const db = await getDb();
+    await db.run('BEGIN TRANSACTION');
+    try {
+      for (const platform of Object.keys(slots)) {
+        for (const tier of Object.keys(slots[platform])) {
+          for (const [durStr, price] of Object.entries(slots[platform][tier])) {
+            const dur = Number(durStr);
+            if (!Number.isInteger(dur) || dur <= 0 || typeof price !== 'number' || price < 0) continue;
+            await db.run(
+              `INSERT INTO pricing_slots (platform, player_tier, duration_minutes, price)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(platform, player_tier, duration_minutes) DO UPDATE SET price = excluded.price`,
+              platform, tier, dur, price
+            );
+          }
+        }
+      }
+      await db.run('COMMIT');
+    } catch (txErr) {
+      await db.run('ROLLBACK');
+      throw txErr;
+    }
+    res.json({ data: { message: 'Slot pricing updated successfully' } });
+  } catch (err) {
+    console.error('[PUT /api/pricing/slots]', err);
+    res.status(500).json({ error: 'Failed to update slot pricing' });
   }
 });
 

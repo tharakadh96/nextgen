@@ -6,8 +6,7 @@
  * PUT  /api/settings            — update settings (admin only)
  *
  * Settings exposed to the client:
- *   auto_end_sessions  — boolean (string 'true'/'false' in DB)
- *   min_duration_price — integer
+ *   auto_end_sessions — boolean (string 'true'/'false' in DB)
  *
  * admin_pin is intentionally excluded from GET /api/settings output.
  */
@@ -68,8 +67,8 @@ router.get('/settings', async (_req: Request, res: Response) => {
     for (const row of rows) {
       if (row.key === 'auto_end_sessions') {
         settings[row.key] = row.value === 'true';
-      } else if (row.key === 'min_duration_price') {
-        settings[row.key] = parseInt(row.value, 10);
+      } else if (row.key === 'grace_period_minutes') {
+        settings[row.key] = parseInt(row.value, 10) || 0;
       } else {
         settings[row.key] = row.value;
       }
@@ -84,13 +83,15 @@ router.get('/settings', async (_req: Request, res: Response) => {
 
 // ---------------------------------------------------------------------------
 // PUT /api/settings  (admin only)
-// Body: { auto_end_sessions?: boolean, admin_pin?: string, min_duration_price?: number }
+// Body: { auto_end_sessions?: boolean, admin_pin?: string, cafe_name?: string, cafe_logo_url?: string }
 // ---------------------------------------------------------------------------
 router.put('/settings', requireAdmin, async (req: Request, res: Response) => {
-  const { auto_end_sessions, admin_pin, min_duration_price } = req.body as {
-    auto_end_sessions?: boolean;
-    admin_pin?:         string;
-    min_duration_price?: number;
+  const { auto_end_sessions, admin_pin, cafe_name, cafe_logo_url, grace_period_minutes } = req.body as {
+    auto_end_sessions?:   boolean;
+    admin_pin?:           string;
+    cafe_name?:           string;
+    cafe_logo_url?:       string;
+    grace_period_minutes?: number;
   };
 
   const updates: { key: string; value: string }[] = [];
@@ -103,24 +104,39 @@ router.put('/settings', requireAdmin, async (req: Request, res: Response) => {
     updates.push({ key: 'auto_end_sessions', value: String(auto_end_sessions) });
   }
 
-  if (min_duration_price !== undefined) {
-    if (
-      typeof min_duration_price !== 'number' ||
-      !Number.isInteger(min_duration_price) ||
-      min_duration_price < 0
-    ) {
-      res.status(400).json({ error: 'min_duration_price must be a non-negative integer' });
-      return;
-    }
-    updates.push({ key: 'min_duration_price', value: String(min_duration_price) });
-  }
-
   if (admin_pin !== undefined) {
     if (typeof admin_pin !== 'string' || !/^\d{4}$/.test(admin_pin)) {
       res.status(400).json({ error: 'admin_pin must be a 4-digit numeric string' });
       return;
     }
     updates.push({ key: 'admin_pin', value: admin_pin });
+  }
+
+  if (cafe_name !== undefined) {
+    const trimmed = String(cafe_name).trim();
+    if (!trimmed || trimmed.length > 80) {
+      res.status(400).json({ error: 'cafe_name must be between 1 and 80 characters' });
+      return;
+    }
+    updates.push({ key: 'cafe_name', value: trimmed });
+  }
+
+  if (cafe_logo_url !== undefined) {
+    const trimmed = String(cafe_logo_url).trim();
+    if (trimmed && !/^https?:\/\/.+/.test(trimmed)) {
+      res.status(400).json({ error: 'cafe_logo_url must be a valid http/https URL or empty' });
+      return;
+    }
+    updates.push({ key: 'cafe_logo_url', value: trimmed });
+  }
+
+  if (grace_period_minutes !== undefined) {
+    const mins = Number(grace_period_minutes);
+    if (!Number.isInteger(mins) || mins < 0 || mins > 60) {
+      res.status(400).json({ error: 'grace_period_minutes must be an integer between 0 and 60' });
+      return;
+    }
+    updates.push({ key: 'grace_period_minutes', value: String(mins) });
   }
 
   if (updates.length === 0) {

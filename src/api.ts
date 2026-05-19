@@ -6,7 +6,7 @@
  * Callers are responsible for catch blocks.
  */
 
-import { Station, SessionLog, RevenueData, StationType } from './types';
+import { Station, SessionLog, RevenueData, StationType, Expense, ExpenseCategory } from './types';
 
 const BASE = '/api';
 
@@ -22,15 +22,19 @@ export interface PlatformRates {
   squad:  { hourly: number; thirtyMin: number; threeHour: number; fiveHour: number };
 }
 
+export type PricingSlots = Record<string, Record<string, Record<number, number>>>;
+
 export interface PricingData {
   ps5Rates: PlatformRates;
   ps4Rates: PlatformRates;
-  minDurationPrice: number;
+  slots: PricingSlots;
 }
 
 export interface SettingsData {
   auto_end_sessions: boolean;
-  min_duration_price: number;
+  cafe_name: string;
+  cafe_logo_url: string;
+  grace_period_minutes: number;
 }
 
 export interface DailyReport {
@@ -39,6 +43,8 @@ export interface DailyReport {
   sessionCount: number;
   ps5Revenue: number;
   ps4Revenue: number;
+  ps5Sessions: number;
+  ps4Sessions: number;
   hourlyBreakdown: RevenueData[];
   platformMix: { ps5Percent: number; ps4Percent: number };
 }
@@ -250,6 +256,41 @@ export async function endSession(stationId: string): Promise<EndSessionResponse>
   return result.data;
 }
 
+export interface AdjustPlayersResponse {
+  stationId: string;
+  sessionId: string;
+  previousPlayers: number;
+  newPlayers: number;
+  accruedRevenue: number;
+  adjustedAt: string;
+}
+
+export interface SwapSessionResponse {
+  fromStationId: string;
+  toStationId: string;
+  sessionId: string;
+  players: number;
+  swappedAt: string;
+}
+
+/** Move an active session from one station to an available target station. */
+export async function swapSession(fromStationId: string, toStationId: string): Promise<SwapSessionResponse> {
+  const result = await apiFetch<{ data: SwapSessionResponse }>(
+    `/stations/${encodeURIComponent(fromStationId)}/swap`,
+    { method: 'POST', body: JSON.stringify({ targetStationId: toStationId }) }
+  );
+  return result.data;
+}
+
+/** Adjust the player count mid-session (banks current segment revenue first). */
+export async function adjustPlayers(stationId: string, players: number): Promise<AdjustPlayersResponse> {
+  const result = await apiFetch<{ data: AdjustPlayersResponse }>(
+    `/stations/${encodeURIComponent(stationId)}/adjust-players`,
+    { method: 'POST', body: JSON.stringify({ players }) }
+  );
+  return result.data;
+}
+
 /** Terminate a session early without collecting revenue. */
 export async function terminateSession(
   stationId: string,
@@ -289,12 +330,23 @@ export async function savePricing(
   token: string,
   ps5Rates: PlatformRates,
   ps4Rates: PlatformRates,
-  minDurationPrice?: number
 ): Promise<void> {
   await apiFetch<unknown>('/pricing', {
     method: 'PUT',
     headers: authHeader(token),
-    body: JSON.stringify({ ps5Rates, ps4Rates, ...(minDurationPrice !== undefined ? { minDurationPrice } : {}) }),
+    body: JSON.stringify({ ps5Rates, ps4Rates }),
+  });
+}
+
+/** Persist updated slot pricing (admin only). */
+export async function savePricingSlots(
+  token: string,
+  slots: PricingSlots,
+): Promise<void> {
+  await apiFetch<unknown>('/pricing/slots', {
+    method: 'PUT',
+    headers: authHeader(token),
+    body: JSON.stringify({ slots }),
   });
 }
 
@@ -355,12 +407,44 @@ export async function fetchSettings(): Promise<SettingsData> {
 /** Persist updated settings (admin only). */
 export async function saveSettings(
   token: string,
-  settings: Partial<Pick<SettingsData, 'auto_end_sessions' | 'min_duration_price'>>
+  settings: Partial<Pick<SettingsData, 'auto_end_sessions' | 'cafe_name' | 'cafe_logo_url' | 'grace_period_minutes'>>
 ): Promise<void> {
   await apiFetch<unknown>('/settings', {
     method: 'PUT',
     headers: authHeader(token),
     body: JSON.stringify(settings),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Expenses
+// ---------------------------------------------------------------------------
+
+/** Fetch expenses for a given month (YYYY-MM). Defaults to current month. */
+export async function fetchExpenses(month?: string): Promise<{ data: Expense[]; total: number }> {
+  const query = month ? `?month=${encodeURIComponent(month)}` : '';
+  return apiFetch<{ data: Expense[]; total: number }>(`/expenses${query}`);
+}
+
+/** Add a new expense entry. */
+export async function addExpense(payload: {
+  category: ExpenseCategory;
+  description?: string;
+  amount: number;
+  date: string;
+}): Promise<Expense> {
+  const result = await apiFetch<{ data: Expense }>('/expenses', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return result.data;
+}
+
+/** Delete an expense (admin only). */
+export async function deleteExpense(id: number, adminToken: string): Promise<void> {
+  await apiFetch<unknown>(`/expenses/${id}`, {
+    method: 'DELETE',
+    headers: authHeader(adminToken),
   });
 }
 

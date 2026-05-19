@@ -26,6 +26,7 @@ import pricingRoutes  from './routes/pricing.js';
 import logsRoutes     from './routes/logs.js';
 import settingsRoutes from './routes/settings.js';
 import authRoutes     from './routes/auth.js';
+import expensesRoutes from './routes/expenses.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -71,6 +72,8 @@ async function startServer(): Promise<void> {
 
   // Settings router handles /api/admin/verify-pin, /api/settings
   app.use('/api', settingsRoutes);
+
+  app.use('/api/expenses', expensesRoutes);
 
   // -------------------------------------------------------------------------
   // 4. Frontend — Vite dev middleware or production static files

@@ -35,3 +35,14 @@ export interface RevenueData {
   time: string;
   value: number;
 }
+
+export type ExpenseCategory = 'internet' | 'water' | 'electricity' | 'maintenance' | 'game_dvd' | 'psn' | 'salary' | 'other';
+
+export interface Expense {
+  id: number;
+  category: ExpenseCategory;
+  description: string;
+  amount: number;
+  date: string;
+  created_at: string;
+}

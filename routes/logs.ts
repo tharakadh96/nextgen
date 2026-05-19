@@ -22,8 +22,8 @@ const router = Router();
 
 interface SessionRow {
   id:                   string;
-  station_id:           string;
-  station_type:         string;
+  station_id:           string | null;
+  station_type:         string | null;
   players:              number;
   duration_label:       string;
   revenue:              number;
@@ -60,15 +60,20 @@ function toSessionLog(row: SessionRow) {
     actualDuration = `${toHHMM(row.started_at)} - ${toHHMM(row.ended_at)} (${formatPlayTime(playSeconds)})`;
   }
 
+  const stationType = row.station_type ?? 'Unknown';
+  const machineId   = row.station_id
+    ? `${row.station_id} (${stationType})`
+    : `[Deleted] (${stationType})`;
+
   return {
     id:                row.id,
-    machineId:         `${row.station_id} (${row.station_type})`,
-    type:              row.station_type,
+    machineId,
+    type:              stationType,
     status:            row.status,
     players:           row.players,
     duration:          actualDuration,
     revenue:           row.revenue,
-    date:              row.started_at.split('T')[0],
+    date:              new Date(row.started_at).toLocaleDateString('en-CA'),
     terminationReason: row.termination_reason ?? undefined,
   };
 }
@@ -98,7 +103,7 @@ router.get('/', async (req: Request, res: Response) => {
       `SELECT
          ses.id,
          ses.station_id,
-         s.type  AS station_type,
+         COALESCE(s.type, ses.station_type) AS station_type,
          ses.players,
          ses.duration_label,
          ses.revenue,
@@ -108,8 +113,8 @@ router.get('/', async (req: Request, res: Response) => {
          ses.ended_at,
          ses.actual_seconds_played
        FROM sessions ses
-       JOIN stations s ON s.id = ses.station_id
-       WHERE date(ses.started_at) = ?
+       LEFT JOIN stations s ON s.id = ses.station_id
+       WHERE date(ses.started_at, '+5 hours', '+30 minutes') = ?
        ORDER BY ses.started_at DESC`,
       date
     );
@@ -142,7 +147,7 @@ router.get('/range', async (req: Request, res: Response) => {
       `SELECT
          ses.id,
          ses.station_id,
-         s.type  AS station_type,
+         COALESCE(s.type, ses.station_type) AS station_type,
          ses.players,
          ses.duration_label,
          ses.revenue,
@@ -152,8 +157,8 @@ router.get('/range', async (req: Request, res: Response) => {
          ses.ended_at,
          ses.actual_seconds_played
        FROM sessions ses
-       JOIN stations s ON s.id = ses.station_id
-       WHERE date(ses.started_at) BETWEEN ? AND ?
+       LEFT JOIN stations s ON s.id = ses.station_id
+       WHERE date(ses.started_at, '+5 hours', '+30 minutes') BETWEEN ? AND ?
        ORDER BY ses.started_at ASC`,
       from, to
     );
@@ -203,15 +208,15 @@ router.get('/daily', async (req: Request, res: Response) => {
       ps4_sessions:   number;
     }>(
       `SELECT
-         COALESCE(SUM(ses.revenue), 0)                         AS total_revenue,
-         COUNT(*)                                               AS session_count,
-         COALESCE(SUM(CASE WHEN s.type = 'PS5' THEN ses.revenue ELSE 0 END), 0) AS ps5_revenue,
-         COALESCE(SUM(CASE WHEN s.type = 'PS4' THEN ses.revenue ELSE 0 END), 0) AS ps4_revenue,
-         COUNT(CASE WHEN s.type = 'PS5' THEN 1 END)            AS ps5_sessions,
-         COUNT(CASE WHEN s.type = 'PS4' THEN 1 END)            AS ps4_sessions
+         COALESCE(SUM(ses.revenue), 0) AS total_revenue,
+         COUNT(*)                       AS session_count,
+         COALESCE(SUM(CASE WHEN COALESCE(s.type, ses.station_type) = 'PS5' THEN ses.revenue ELSE 0 END), 0) AS ps5_revenue,
+         COALESCE(SUM(CASE WHEN COALESCE(s.type, ses.station_type) = 'PS4' THEN ses.revenue ELSE 0 END), 0) AS ps4_revenue,
+         COUNT(CASE WHEN COALESCE(s.type, ses.station_type) = 'PS5' THEN 1 END) AS ps5_sessions,
+         COUNT(CASE WHEN COALESCE(s.type, ses.station_type) = 'PS4' THEN 1 END) AS ps4_sessions
        FROM sessions ses
-       JOIN stations s ON s.id = ses.station_id
-       WHERE date(ses.started_at) = ?
+       LEFT JOIN stations s ON s.id = ses.station_id
+       WHERE date(ses.started_at, '+5 hours', '+30 minutes') = ?
          AND ses.status = 'completed'`,
       date
     );
@@ -219,10 +224,11 @@ router.get('/daily', async (req: Request, res: Response) => {
     // Hourly revenue breakdown — grouped by hour of day
     const hourlyRows = await db.all<{ hour: number; revenue: number }[]>(
       `SELECT
-         CAST(strftime('%H', ses.started_at) AS INTEGER) AS hour,
+         CAST(strftime('%H', ses.started_at, '+5 hours', '+30 minutes') AS INTEGER) AS hour,
          COALESCE(SUM(ses.revenue), 0)                   AS revenue
        FROM sessions ses
-       WHERE date(ses.started_at) = ?
+       LEFT JOIN stations s ON s.id = ses.station_id
+       WHERE date(ses.started_at, '+5 hours', '+30 minutes') = ?
          AND ses.status = 'completed'
        GROUP BY hour
        ORDER BY hour`,

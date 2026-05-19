@@ -12,6 +12,7 @@ import { Router, type Request, type Response } from 'express';
 import { randomUUID } from 'crypto';
 import { getDb } from '../db/database.js';
 import { type Database } from 'sqlite';
+import { requireAdmin } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -38,6 +39,8 @@ interface SessionRow {
   end_time:             string | null;  // HH:MM user-entered
   ends_at:              string | null;  // ISO-8601 absolute end time
   revenue:              number;
+  accrued_revenue:      number;         // revenue banked from previous player-count segments
+  billing_started_at:   string | null;  // start of current billing segment (null = use started_at)
   status:               'in-progress' | 'completed' | 'terminated';
   termination_reason:   string | null;
   started_at:           string;
@@ -130,7 +133,11 @@ function formatCountdown(remaining: number): string {
 
 /**
  * Calculates revenue for a session given the station type, player count,
- * and booked duration in seconds. Falls back to the minimum duration price.
+ * and booked duration in seconds.
+ *
+ * Lookup order:
+ *   1. pricing_slots — exact per-30-min custom rates (platform + tier specific)
+ *   2. pricing table — pro-rated from hourly rate with tier caps (fallback)
  */
 async function calculateRevenue(
   db:              Database,
@@ -143,22 +150,44 @@ async function calculateRevenue(
     players === 3 ? 'trio'   :
     players === 2 ? 'duo'    : 'single';
 
+  const GRACE = 5; // minutes grace period after each slot boundary
+  const durationMinutes = durationSeconds / 60;
+
+  // 1. Try custom slot-based pricing
+  const slots = await db.all<{ duration_minutes: number; price: number }[]>(
+    `SELECT duration_minutes, price FROM pricing_slots
+     WHERE platform = ? AND player_tier = ?
+     ORDER BY duration_minutes ASC`,
+    platform, tier
+  );
+
+  if (slots.length > 0) {
+    // Apply grace: if within 5 min over a slot boundary, round down to that slot
+    let billedMinutes = durationMinutes;
+    for (const slot of slots) {
+      if (durationMinutes > slot.duration_minutes && durationMinutes <= slot.duration_minutes + GRACE) {
+        billedMinutes = slot.duration_minutes;
+        break;
+      }
+    }
+
+    // Find the largest slot with duration <= billedMinutes
+    let matchedPrice: number | null = null;
+    for (const slot of slots) {
+      if (slot.duration_minutes <= billedMinutes) matchedPrice = slot.price;
+    }
+
+    if (matchedPrice !== null) return matchedPrice;
+  }
+
+  // 2. Fallback: pro-rate from hourly rate with tier caps
   const pricing = await db.get<PricingRow>(
     `SELECT * FROM pricing WHERE platform = ? AND player_tier = ?`,
     platform, tier
   );
 
-  const minPriceSetting = await db.get<{ value: string }>(
-    `SELECT value FROM settings WHERE key = 'min_duration_price'`
-  );
-  const minPrice = minPriceSetting ? parseInt(minPriceSetting.value, 10) : 30;
+  if (!pricing) return 0;
 
-  if (!pricing) return minPrice;
-
-  const GRACE = 5; // minutes grace period after each milestone
-  const durationMinutes = durationSeconds / 60;
-
-  // Apply grace period: if within 5 minutes over a milestone, treat as that milestone
   let billedMinutes = durationMinutes;
   if (durationMinutes > 30  && durationMinutes <= 30  + GRACE) billedMinutes = 30;
   if (durationMinutes > 60  && durationMinutes <= 60  + GRACE) billedMinutes = 60;
@@ -171,18 +200,16 @@ async function calculateRevenue(
   } else if (billedMinutes <= 60) {
     revenue = pricing.price_one_hour;
   } else if (billedMinutes <= 180) {
-    revenue = billedMinutes === 180
-      ? pricing.price_three_hour
-      : Math.round(pricing.price_one_hour * (billedMinutes / 60));
+    const prorated = Math.round(pricing.price_one_hour * (billedMinutes / 60));
+    revenue = Math.min(prorated, pricing.price_three_hour);
   } else if (billedMinutes <= 300) {
-    revenue = billedMinutes === 300
-      ? pricing.price_five_hour
-      : Math.round(pricing.price_one_hour * (billedMinutes / 60));
+    const prorated = Math.round(pricing.price_one_hour * (billedMinutes / 60));
+    revenue = Math.min(prorated, pricing.price_five_hour);
   } else {
     revenue = Math.round(pricing.price_one_hour * (billedMinutes / 60));
   }
 
-  return Math.max(revenue, minPrice);
+  return revenue;
 }
 
 /**
@@ -321,10 +348,10 @@ router.post('/:id/start', async (req: Request, res: Response) => {
     try {
       await db.run(
         `INSERT INTO sessions
-           (id, station_id, players, duration_seconds, duration_label,
+           (id, station_id, station_type, players, duration_seconds, duration_label,
             start_time, end_time, ends_at, status, started_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'in-progress', ?)`,
-        sessionId, id, players, durationSeconds, durationLabel,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'in-progress', ?)`,
+        sessionId, id, station.type, players, durationSeconds, durationLabel,
         startTime, endTime, endsAt, startedAt
       );
 
@@ -392,15 +419,14 @@ router.post('/:id/end', async (req: Request, res: Response) => {
       return;
     }
 
-    // actual_seconds_played: how long the session actually ran (wall-clock)
-    // Revenue is based on actual time — players may leave before the booked end
-    const actualSeconds = elapsedSeconds(session.started_at);
-    const revenue       = await calculateRevenue(
-      db,
-      stateRow.type,
-      session.players,
-      actualSeconds
-    );
+    // actual_seconds_played: total wall-clock time (always from original started_at)
+    // Revenue is segmented: accrued_revenue (banked from prior player-count changes)
+    // + current segment (billing_started_at → now at current player count)
+    const actualSeconds   = elapsedSeconds(session.started_at);
+    const segmentRef      = session.billing_started_at ?? session.started_at;
+    const segmentSeconds  = elapsedSeconds(segmentRef);
+    const segmentRevenue  = await calculateRevenue(db, stateRow.type, session.players, segmentSeconds);
+    const revenue         = (session.accrued_revenue ?? 0) + segmentRevenue;
 
     const endedAt = new Date().toISOString();
 
@@ -481,10 +507,10 @@ router.post('/:id/terminate', async (req: Request, res: Response) => {
       return;
     }
 
-    // For terminate: actual time played is elapsed wall-clock time
-    const actualSeconds = elapsedSeconds(session.started_at);
-    const endedAt       = new Date().toISOString();
-    const durationStr   = formatDuration(actualSeconds);
+    // For terminate: total wall-clock time from session start
+    const actualSeconds  = elapsedSeconds(session.started_at);
+    const endedAt        = new Date().toISOString();
+    const durationStr    = formatDuration(actualSeconds);
 
     await db.run('BEGIN TRANSACTION');
     try {
@@ -560,27 +586,37 @@ router.post('/:id/collect', async (req: Request, res: Response) => {
       return;
     }
 
-    await db.run(
-      `UPDATE station_state
-       SET status = 'available', active_session_id = NULL,
-           pending_revenue = NULL, actual_seconds_played = NULL
-       WHERE station_id = ?`,
-      id
-    );
+    await db.run('BEGIN TRANSACTION');
+    try {
+      await db.run(
+        `UPDATE station_state
+         SET status = 'available', active_session_id = NULL,
+             pending_revenue = NULL, actual_seconds_played = NULL
+         WHERE station_id = ?`,
+        id
+      );
+      await db.run('COMMIT');
+    } catch (txErr) {
+      await db.run('ROLLBACK');
+      throw txErr;
+    }
 
-    const actualSeconds = stateRow.actual_seconds_played ?? 0;
+    // Return local Sri Lanka date (UTC+5:30) to match backend report bucketing
+    const now = new Date();
+    const localDate = new Date(now.getTime() + (5 * 60 + 30) * 60_000)
+      .toISOString().split('T')[0];
 
     res.json({
       data: {
         stationId: id,
         sessionId: session.id,
         revenue:   stateRow.pending_revenue ?? 0,
-        duration:  session.duration_label,   // "14:00 - 16:00"
+        duration:  session.duration_label,
         machineId: `${id} (${stateRow.type})`,
         type:      stateRow.type,
         status:    'completed',
         players:   session.players,
-        date:      new Date().toISOString().split('T')[0],
+        date:      localDate,
         startTime: session.start_time,
         endTime:   session.end_time,
       },
@@ -666,10 +702,190 @@ router.post('/:id/extend', async (req: Request, res: Response) => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/stations/:id/adjust-players
+// Body: { players: number }
+// Banks revenue for the current segment at the old player count, then switches
+// to the new player count for all future billing within this session.
+// ---------------------------------------------------------------------------
+router.post('/:id/adjust-players', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { players } = req.body as { players?: unknown };
+
+  const newPlayers = Number(players);
+  if (!Number.isInteger(newPlayers) || newPlayers < 1 || newPlayers > 4) {
+    res.status(400).json({ error: 'players must be an integer between 1 and 4' });
+    return;
+  }
+
+  try {
+    const db = await getDb();
+
+    const stateRow = await db.get<StationRow>(
+      `SELECT ss.*, s.type FROM station_state ss
+       JOIN stations s ON s.id = ss.station_id
+       WHERE ss.station_id = ? AND ss.status = 'busy'`,
+      id
+    );
+
+    if (!stateRow) {
+      res.status(409).json({ error: `Station ${id} has no active session` });
+      return;
+    }
+
+    const session = await db.get<SessionRow>(
+      `SELECT * FROM sessions WHERE id = ?`,
+      stateRow.active_session_id
+    );
+
+    if (!session) {
+      res.status(500).json({ error: 'Session record missing — data inconsistency' });
+      return;
+    }
+
+    if (session.players === newPlayers) {
+      res.status(400).json({ error: `Session already has ${newPlayers} player(s)` });
+      return;
+    }
+
+    // Bank revenue for the current segment (billing_started_at → now at old player count)
+    const segmentRef     = session.billing_started_at ?? session.started_at;
+    const segmentSeconds = elapsedSeconds(segmentRef);
+    const segmentRevenue = await calculateRevenue(db, stateRow.type, session.players, segmentSeconds);
+    const newAccrued     = (session.accrued_revenue ?? 0) + segmentRevenue;
+    const now            = new Date().toISOString();
+
+    await db.run('BEGIN TRANSACTION');
+    try {
+      await db.run(
+        `UPDATE sessions
+         SET players = ?, accrued_revenue = ?, billing_started_at = ?
+         WHERE id = ?`,
+        newPlayers, newAccrued, now, session.id
+      );
+      await db.run('COMMIT');
+    } catch (txErr) {
+      await db.run('ROLLBACK');
+      throw txErr;
+    }
+
+    res.json({
+      data: {
+        stationId:      id,
+        sessionId:      session.id,
+        previousPlayers: session.players,
+        newPlayers,
+        accruedRevenue: newAccrued,
+        adjustedAt:     now,
+      },
+    });
+  } catch (err) {
+    console.error(`[POST /api/stations/${id}/adjust-players]`, err);
+    res.status(500).json({ error: 'Failed to adjust players' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/stations/:id/swap
+// Body: { targetStationId: string }
+// Moves the active session from source to an available target station.
+// ---------------------------------------------------------------------------
+router.post('/:id/swap', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { targetStationId } = req.body as { targetStationId?: string };
+
+  if (!targetStationId || typeof targetStationId !== 'string' || !targetStationId.trim()) {
+    res.status(400).json({ error: 'targetStationId is required' });
+    return;
+  }
+
+  if (id === targetStationId.trim()) {
+    res.status(400).json({ error: 'Source and target stations must be different' });
+    return;
+  }
+
+  const targetId = targetStationId.trim();
+
+  try {
+    const db = await getDb();
+
+    const sourceState = await db.get<StationRow>(
+      `SELECT ss.*, s.type FROM station_state ss
+       JOIN stations s ON s.id = ss.station_id
+       WHERE ss.station_id = ? AND ss.status = 'busy'`,
+      id
+    );
+
+    if (!sourceState) {
+      res.status(409).json({ error: `Station ${id} has no active session to swap` });
+      return;
+    }
+
+    const targetStation = await db.get<{ id: string; type: string }>(
+      `SELECT s.id, s.type FROM stations s
+       JOIN station_state ss ON ss.station_id = s.id
+       WHERE s.id = ? AND ss.status = 'available'`,
+      targetId
+    );
+
+    if (!targetStation) {
+      res.status(409).json({ error: `Station ${targetId} not found or not available` });
+      return;
+    }
+
+    const session = await db.get<SessionRow>(
+      `SELECT * FROM sessions WHERE id = ?`,
+      sourceState.active_session_id
+    );
+
+    if (!session) {
+      res.status(500).json({ error: 'Session record missing — data inconsistency' });
+      return;
+    }
+
+    const swappedAt = new Date().toISOString();
+
+    await db.run('BEGIN TRANSACTION');
+    try {
+      await db.run(
+        `UPDATE sessions SET station_id = ? WHERE id = ?`,
+        targetId, session.id
+      );
+      await db.run(
+        `UPDATE station_state
+         SET status = 'available', active_session_id = NULL, pending_revenue = NULL, actual_seconds_played = NULL
+         WHERE station_id = ?`,
+        id
+      );
+      await db.run(
+        `UPDATE station_state SET status = 'busy', active_session_id = ? WHERE station_id = ?`,
+        session.id, targetId
+      );
+      await db.run('COMMIT');
+    } catch (txErr) {
+      await db.run('ROLLBACK');
+      throw txErr;
+    }
+
+    res.json({
+      data: {
+        fromStationId: id,
+        toStationId:   targetId,
+        sessionId:     session.id,
+        players:       session.players,
+        swappedAt,
+      },
+    });
+  } catch (err) {
+    console.error(`[POST /api/stations/${id}/swap]`, err);
+    res.status(500).json({ error: 'Failed to swap session' });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // POST /api/stations
 // Body: { id: string, type: string, pricingTemplate: 'PS5' | 'PS4' }
 // ---------------------------------------------------------------------------
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', requireAdmin, async (req: Request, res: Response) => {
   const { id, type, pricingTemplate } = req.body as {
     id?: string;
     type?: string;
@@ -741,7 +957,7 @@ router.post('/', async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 // DELETE /api/stations/:id
 // ---------------------------------------------------------------------------
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
   const { id } = req.params;
 
   try {

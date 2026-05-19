@@ -87,6 +87,22 @@ CREATE TABLE IF NOT EXISTS settings (
 INSERT OR IGNORE INTO settings (key, value) VALUES
   ('admin_pin',           '1234'),
   ('auto_end_sessions',   'true'),
-  ('min_duration_price',  '30'),
   ('staff_username',      'nextgen'),
-  ('staff_password_hash', '');
+  ('staff_password_hash', ''),
+  ('cafe_name',           'Nextgen Gaming'),
+  ('cafe_logo_url',       'https://olive-adjacent-orangutan-186.mypinata.cloud/ipfs/bafkreif3vvhdqi2dqa36ykkglkc73ku7m2mblm2mi46e5y7ktkdx7sm5pe');
+
+-- ---------------------------------------------------------------------------
+-- expenses
+-- Operational expenses: internet, water, maintenance, game DVDs, PSN subs, etc.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS expenses (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  category    TEXT    NOT NULL,   -- 'internet' | 'water' | 'maintenance' | 'game_dvd' | 'psn' | 'other'
+  description TEXT    NOT NULL DEFAULT '',
+  amount      INTEGER NOT NULL,   -- whole LKR
+  date        TEXT    NOT NULL,   -- YYYY-MM-DD
+  created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses (date);
